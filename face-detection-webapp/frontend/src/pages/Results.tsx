@@ -286,16 +286,74 @@ function ListView({ faces, faceColorMap }: { faces: UniqueFace[]; faceColorMap: 
 }
 
 // ------------------------------------------------------------------ //
-// Graph View — bipartite layout: photos left, faces right             //
+// Graph View — radial gravity layout                                   //
+//                                                                      //
+// Person nodes orbit in a circle.                                      //
+// Photo nodes float at the gravitational centroid of their people —    //
+// single-person photos cluster near that person,                       //
+// multi-person photos drift toward the center naturally.               //
 // ------------------------------------------------------------------ //
 
-const PHOTO_W = 130;
-const PHOTO_H = 150;
-const FACE_W = 90;
-const FACE_H = 90;
-const PHOTO_GAP = 40;   // vertical gap between photo nodes
-const FACE_GAP = 30;    // vertical gap between face nodes
-const COL_GAP = 360;    // horizontal distance left-col → right-col
+/** Compute (x,y) positions for all nodes using the radial gravity model */
+function computeLayout(images: ImageNode[], faces: UniqueFace[]) {
+  const n = faces.length;
+  // Scale orbit radius with number of people (min 220, max 420)
+  const R = Math.min(420, Math.max(220, n * 72));
+
+  // --- Face positions: evenly spaced around a circle ---
+  const facePos = new Map<string, { x: number; y: number }>();
+  faces.forEach((f, i) => {
+    const angle = (i / n) * Math.PI * 2 - Math.PI / 2; // start from top
+    facePos.set(f.id, { x: R * Math.cos(angle), y: R * Math.sin(angle) });
+  });
+
+  // --- Photo positions: centroid of connected faces, pushed outward ---
+  const photoPos = new Map<string, { x: number; y: number }>();
+  const PUSH = 190;   // how far beyond centroid to place the photo
+  const GOLDEN = 2.3999632; // golden angle (rad) — spread same-centroid photos
+
+  // Track how many photos share the same face set (for jitter)
+  const centroidCount = new Map<string, number>();
+
+  images.forEach((img, imgIdx) => {
+    if (img.faces.length === 0) {
+      // No detections — scatter on an outer ring
+      const angle = (imgIdx / Math.max(images.length, 1)) * Math.PI * 2;
+      photoPos.set(img.id, { x: (R + PUSH) * Math.cos(angle), y: (R + PUSH) * Math.sin(angle) });
+      return;
+    }
+
+    // Centroid of connected face nodes
+    let cx = 0, cy = 0;
+    img.faces.forEach((fm) => {
+      const p = facePos.get(fm.unique_face_id) ?? { x: 0, y: 0 };
+      cx += p.x; cy += p.y;
+    });
+    cx /= img.faces.length;
+    cy /= img.faces.length;
+
+    // Direction from canvas center (0,0) toward centroid
+    const mag = Math.sqrt(cx * cx + cy * cy);
+    const ux = mag < 1 ? Math.cos(imgIdx) : cx / mag;
+    const uy = mag < 1 ? Math.sin(imgIdx) : cy / mag;
+
+    // Golden-angle jitter so photos sharing the same person don't stack
+    const key = img.faces.map((f) => f.unique_face_id).sort().join(",");
+    const count = centroidCount.get(key) ?? 0;
+    centroidCount.set(key, count + 1);
+    const jAngle = count * GOLDEN;
+    const jR = count === 0 ? 0 : 30 + count * 12; // spiral outward
+    const jx = jR * Math.cos(jAngle);
+    const jy = jR * Math.sin(jAngle);
+
+    photoPos.set(img.id, {
+      x: cx + ux * PUSH + jx,
+      y: cy + uy * PUSH + jy,
+    });
+  });
+
+  return { facePos, photoPos };
+}
 
 function buildGraph(
   images: ImageNode[],
@@ -305,41 +363,97 @@ function buildGraph(
 ): { nodes: Node[]; edges: Edge[] } {
   const nodes: Node[] = [];
   const edges: Edge[] = [];
+  const { facePos, photoPos } = computeLayout(images, faces);
 
-  const faceIndexMap = new Map(faces.map((f, i) => [f.id, i]));
+  const FACE_D = 96;   // face node diameter
+  const PHOTO_W = 124;
+  const PHOTO_H = 148;
 
-  // --- Left column: photo nodes, evenly spaced ---
-  const totalPhotoH = images.length * PHOTO_H + (images.length - 1) * PHOTO_GAP;
-  const totalFaceH  = faces.length  * FACE_H  + (faces.length  - 1) * FACE_GAP;
-  const canvasH = Math.max(totalPhotoH, totalFaceH);
-
-  const photoStartY = (canvasH - totalPhotoH) / 2;
-  const faceStartY  = (canvasH - totalFaceH)  / 2;
-
-  images.forEach((img, idx) => {
-    const py = photoStartY + idx * (PHOTO_H + PHOTO_GAP);
+  // --- Face nodes ---
+  faces.forEach((face, i) => {
+    const color = faceColorMap.get(face.id) ?? PERSON_COLORS[i % PERSON_COLORS.length];
+    const pos = facePos.get(face.id)!;
 
     nodes.push({
-      id: `photo-${img.id}`,
-      position: { x: 0, y: py },
+      id: `face-${face.id}`,
+      position: { x: pos.x - FACE_D / 2, y: pos.y - FACE_D / 2 },
       data: {
         label: (
-          <div
-            className="flex flex-col items-center gap-1 select-none"
-            onDoubleClick={() => onPhotoDoubleClick(img)}
-            title="Double-click to inspect"
-          >
-            <div className="w-24 h-24 rounded-xl overflow-hidden border border-white/10 group-hover:border-brand-400 transition-colors">
-              <img src={`${BASE}${img.image_url}`} alt={img.filename} className="w-full h-full object-cover" />
+          <div className="flex flex-col items-center gap-0.5 select-none">
+            <div
+              className="w-14 h-14 rounded-full overflow-hidden"
+              style={{ boxShadow: `0 0 0 3px ${color}, 0 0 18px ${color}60` }}
+            >
+              <img src={`${BASE}${face.face_image_url}`} alt="" className="w-full h-full object-cover" />
             </div>
-            <span className="text-[10px] text-slate-300 truncate max-w-[110px] text-center font-medium">{img.filename}</span>
-            <span className="text-[9px] text-slate-500">{img.faces.length} face{img.faces.length !== 1 ? "s" : ""} · dbl-click</span>
+            <span className="text-[10px] font-bold mt-0.5" style={{ color }}>
+              Person {i + 1}
+            </span>
+            <span className="text-[9px] text-slate-500">
+              {face.matches.length} photo{face.matches.length !== 1 ? "s" : ""}
+            </span>
           </div>
         ),
       },
       style: {
-        background: "#12121a",
-        border: "1px solid rgba(255,255,255,0.08)",
+        background: "radial-gradient(circle at 40% 35%, #22223a, #0f0f1a)",
+        border: `1.5px solid ${color}40`,
+        borderRadius: "50%",
+        width: FACE_D,
+        height: FACE_D,
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        boxShadow: `0 0 0 6px ${color}0c, 0 0 40px ${color}18`,
+        animation: "facePulse 3s ease-in-out infinite",
+        animationDelay: `${i * 0.4}s`,
+      },
+    });
+  });
+
+  // --- Photo nodes ---
+  images.forEach((img) => {
+    const pos = photoPos.get(img.id)!;
+    const hasFaces = img.faces.length > 0;
+
+    // Multi-color left-border: stripe each person's color
+    const borderColors = img.faces
+      .map((f) => faceColorMap.get(f.unique_face_id) ?? "#ffffff20")
+      .join(", ");
+    const leftBorder = img.faces.length > 1
+      ? `linear-gradient(180deg, ${borderColors}) 1`
+      : img.faces.length === 1
+        ? `${faceColorMap.get(img.faces[0].unique_face_id) ?? "#ffffff20"}80`
+        : "rgba(255,255,255,0.06)";
+
+    nodes.push({
+      id: `photo-${img.id}`,
+      position: { x: pos.x - PHOTO_W / 2, y: pos.y - PHOTO_H / 2 },
+      data: {
+        label: (
+          <div
+            className="flex flex-col items-center gap-1 select-none w-full"
+            onDoubleClick={() => onPhotoDoubleClick(img)}
+          >
+            <div className="w-[100px] h-[100px] rounded-xl overflow-hidden border border-white/10">
+              <img src={`${BASE}${img.image_url}`} alt={img.filename} className="w-full h-full object-cover" />
+            </div>
+            <span className="text-[10px] text-slate-300 truncate max-w-[108px] text-center font-medium leading-tight">
+              {img.filename}
+            </span>
+            <span className="text-[9px] text-slate-500">
+              {hasFaces ? `${img.faces.length} face${img.faces.length !== 1 ? "s" : ""}` : "no faces"}
+              {" · dbl-click"}
+            </span>
+          </div>
+        ),
+      },
+      style: {
+        background: "radial-gradient(135deg, #161622 0%, #0d0d18 100%)",
+        border: "1px solid rgba(255,255,255,0.07)",
+        borderLeft: img.faces.length === 1
+          ? `3px solid ${faceColorMap.get(img.faces[0].unique_face_id) ?? "transparent"}`
+          : "1px solid rgba(255,255,255,0.07)",
         borderRadius: "16px",
         width: PHOTO_W,
         height: PHOTO_H,
@@ -347,57 +461,27 @@ function buildGraph(
         alignItems: "center",
         justifyContent: "center",
         cursor: "default",
+        boxShadow: "0 4px 24px rgba(0,0,0,0.4)",
       },
     });
   });
 
-  // --- Right column: face nodes, evenly spaced ---
-  faces.forEach((face, idx) => {
-    const color = faceColorMap.get(face.id) ?? PERSON_COLORS[idx % PERSON_COLORS.length];
-    const personIdx = idx + 1;
-    const fy = faceStartY + idx * (FACE_H + FACE_GAP);
-
-    nodes.push({
-      id: `face-${face.id}`,
-      position: { x: COL_GAP, y: fy },
-      data: {
-        label: (
-          <div className="flex flex-col items-center gap-1">
-            <div className="w-12 h-12 rounded-full overflow-hidden" style={{ boxShadow: `0 0 0 2.5px ${color}` }}>
-              <img src={`${BASE}${face.face_image_url}`} alt="" className="w-full h-full object-cover" />
-            </div>
-            <span className="text-[10px] font-bold" style={{ color }}>Person {personIdx}</span>
-            <span className="text-[9px] text-slate-500">{face.matches.length} photo{face.matches.length !== 1 ? "s" : ""}</span>
-          </div>
-        ),
-      },
-      style: {
-        background: "#1a1a26",
-        border: `2px solid ${color}50`,
-        borderRadius: "50%",
-        width: FACE_W,
-        height: FACE_H,
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        boxShadow: `0 0 20px ${color}18`,
-      },
-    });
-  });
-
-  // --- Edges: photo → each face it contains ---
+  // --- Edges ---
   images.forEach((img) => {
-    img.faces.forEach((faceMatch) => {
-      const color = faceColorMap.get(faceMatch.unique_face_id) ?? "#eab308";
+    img.faces.forEach((fm) => {
+      const color = faceColorMap.get(fm.unique_face_id) ?? "#eab308";
       edges.push({
-        id: `e-${img.id}-${faceMatch.unique_face_id}`,
+        id: `e-${img.id}-${fm.unique_face_id}`,
         source: `photo-${img.id}`,
-        target: `face-${faceMatch.unique_face_id}`,
-        sourceHandle: null,
-        targetHandle: null,
-        type: "smoothstep",
-        animated: false,
-        style: { stroke: color, strokeWidth: 2, strokeOpacity: 0.45 },
+        target: `face-${fm.unique_face_id}`,
+        type: "bezier",
+        animated: true,
+        style: {
+          stroke: color,
+          strokeWidth: 1.8,
+          strokeOpacity: 0.55,
+          filter: `drop-shadow(0 0 4px ${color}60)`,
+        },
       });
     });
   });
@@ -419,45 +503,91 @@ function GraphCanvas({
 
   return (
     <>
-      <div className="w-full h-[calc(100vh-220px)] rounded-2xl overflow-hidden border border-white/5">
+      {/* Keyframe for face node breathing glow */}
+      <style>{`
+        @keyframes facePulse {
+          0%, 100% { box-shadow: var(--pulse-shadow-lo); }
+          50%       { box-shadow: var(--pulse-shadow-hi); }
+        }
+        .react-flow__node { overflow: visible !important; }
+        .react-flow__handle { opacity: 0 !important; width: 1px !important; height: 1px !important; }
+      `}</style>
+
+      <div className="relative w-full h-[calc(100vh-220px)] rounded-2xl overflow-hidden border border-white/5">
         <ReactFlow
           nodes={nodes}
           edges={edges}
           onNodesChange={onNodesChange}
           onEdgesChange={onEdgesChange}
           fitView
-          fitViewOptions={{ padding: 0.15 }}
-          minZoom={0.15}
-          maxZoom={2.5}
+          fitViewOptions={{ padding: 0.2 }}
+          minZoom={0.1}
+          maxZoom={3}
           colorMode="dark"
+          proOptions={{ hideAttribution: true }}
         >
-          <Background variant={BackgroundVariant.Dots} gap={24} color="#ffffff06" />
-          <Controls className="!bg-dark-800 !border-white/10" />
+          {/* Subtle cross-hatch background */}
+          <Background variant={BackgroundVariant.Dots} gap={32} size={1} color="#ffffff08" />
+
+          <Controls
+            showInteractive={false}
+            style={{
+              background: "rgba(18,18,26,0.9)",
+              border: "1px solid rgba(255,255,255,0.08)",
+              borderRadius: "12px",
+              backdropFilter: "blur(8px)",
+            }}
+          />
+
           <MiniMap
-            style={{ background: "#12121a", border: "1px solid rgba(255,255,255,0.05)" }}
+            style={{
+              background: "#0d0d18",
+              border: "1px solid rgba(255,255,255,0.06)",
+              borderRadius: "12px",
+            }}
             nodeColor={(n) => {
               if (n.id.startsWith("face-")) {
-                const faceId = n.id.replace("face-", "");
-                return (faceColorMap.get(faceId) ?? "#eab308") + "90";
+                const id = n.id.slice(5);
+                return (faceColorMap.get(id) ?? "#eab308") + "cc";
               }
-              return "#22223a";
+              return "#1e1e2e";
             }}
+            maskColor="rgba(0,0,0,0.5)"
           />
         </ReactFlow>
 
-        {/* Double-click hint */}
-        <div className="absolute bottom-4 left-1/2 -translate-x-1/2 px-3 py-1.5 rounded-full bg-dark-800/80 border border-white/10 text-xs text-slate-500 pointer-events-none backdrop-blur">
-          Double-click a photo to inspect · Drag to pan · Scroll to zoom
+        {/* Legend */}
+        <div className="absolute top-3 left-3 flex items-center gap-2 flex-wrap max-w-xs">
+          {faces.map((f, i) => {
+            const color = faceColorMap.get(f.id) ?? PERSON_COLORS[i % PERSON_COLORS.length];
+            return (
+              <div
+                key={f.id}
+                className="flex items-center gap-1.5 px-2 py-1 rounded-full text-[10px] font-semibold backdrop-blur"
+                style={{
+                  background: `${color}15`,
+                  border: `1px solid ${color}40`,
+                  color,
+                }}
+              >
+                <div className="w-4 h-4 rounded-full overflow-hidden shrink-0" style={{ boxShadow: `0 0 0 1px ${color}` }}>
+                  <img src={`${BASE}${f.face_image_url}`} alt="" className="w-full h-full object-cover" />
+                </div>
+                P{i + 1}
+              </div>
+            );
+          })}
+        </div>
+
+        {/* Hint */}
+        <div className="absolute bottom-3 left-1/2 -translate-x-1/2 px-3 py-1.5 rounded-full bg-black/50 border border-white/08 text-[10px] text-slate-500 pointer-events-none backdrop-blur whitespace-nowrap">
+          Double-click a photo · Scroll to zoom · Drag to pan
         </div>
       </div>
 
       <AnimatePresence>
         {popup && (
-          <PhotoPopup
-            image={popup}
-            faceColorMap={faceColorMap}
-            onClose={() => setPopup(null)}
-          />
+          <PhotoPopup image={popup} faceColorMap={faceColorMap} onClose={() => setPopup(null)} />
         )}
       </AnimatePresence>
     </>
