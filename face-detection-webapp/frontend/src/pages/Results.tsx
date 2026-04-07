@@ -357,64 +357,12 @@ const PHOTO_W = 130;
 const PHOTO_H = 152;
 const PHOTO_GAP_X = 44;
 const PHOTO_GAP_Y = 36;
-const FACE_D = 108;
+// Face node: ID-badge card — wide photo on top, info strip below
+const FACE_W = 96;
+const FACE_H = 122;
+const FACE_IMG_H = 74;  // photo portion height
 const FACE_GAP = 44;
 const SECTION_GAP = 220; // vertical space between photo grid bottom and face row top
-
-// Each person gets a distinct shape so nodes are immediately visually different
-type ShapeDef = { outer: React.CSSProperties; inner: React.CSSProperties };
-const FACE_NODE_SHAPES: ShapeDef[] = [
-  // 0 – Hexagon
-  {
-    outer: { clipPath: "polygon(50% 0%, 100% 25%, 100% 75%, 50% 100%, 0% 75%, 0% 25%)", borderRadius: 0 },
-    inner: { clipPath: "polygon(50% 0%, 100% 25%, 100% 75%, 50% 100%, 0% 75%, 0% 25%)" },
-  },
-  // 1 – Rounded square / squircle
-  {
-    outer: { borderRadius: "22px" },
-    inner: { borderRadius: "14px" },
-  },
-  // 2 – Shield (pointed bottom)
-  {
-    outer: { clipPath: "polygon(0% 0%, 100% 0%, 100% 65%, 50% 100%, 0% 65%)", borderRadius: 0 },
-    inner: { clipPath: "polygon(0% 0%, 100% 0%, 100% 65%, 50% 100%, 0% 65%)" },
-  },
-  // 3 – Octagon
-  {
-    outer: { clipPath: "polygon(30% 0%, 70% 0%, 100% 30%, 100% 70%, 70% 100%, 30% 100%, 0% 70%, 0% 30%)", borderRadius: 0 },
-    inner: { clipPath: "polygon(30% 0%, 70% 0%, 100% 30%, 100% 70%, 70% 100%, 30% 100%, 0% 70%, 0% 30%)" },
-  },
-  // 4 – Pentagon
-  {
-    outer: { clipPath: "polygon(50% 0%, 100% 38%, 82% 100%, 18% 100%, 0% 38%)", borderRadius: 0 },
-    inner: { clipPath: "polygon(50% 0%, 100% 38%, 82% 100%, 18% 100%, 0% 38%)" },
-  },
-  // 5 – Tag / arch top
-  {
-    outer: { borderRadius: "50% 50% 8px 8px" },
-    inner: { borderRadius: "50% 50% 4px 4px" },
-  },
-  // 6 – Diamond
-  {
-    outer: { clipPath: "polygon(50% 0%, 100% 45%, 50% 100%, 0% 45%)", borderRadius: 0 },
-    inner: { clipPath: "polygon(50% 0%, 100% 45%, 50% 100%, 0% 45%)" },
-  },
-  // 7 – Rounded pill / stadium
-  {
-    outer: { borderRadius: "999px" },
-    inner: { borderRadius: "999px" },
-  },
-  // 8 – Tilted square (diamond-ish via rotation handled with clip)
-  {
-    outer: { clipPath: "polygon(50% 5%, 95% 50%, 50% 95%, 5% 50%)", borderRadius: 0 },
-    inner: { clipPath: "polygon(50% 5%, 95% 50%, 50% 95%, 5% 50%)" },
-  },
-  // 9 – Notched corners (badge)
-  {
-    outer: { clipPath: "polygon(12% 0%, 88% 0%, 100% 12%, 100% 88%, 88% 100%, 12% 100%, 0% 88%, 0% 12%)", borderRadius: 0 },
-    inner: { clipPath: "polygon(12% 0%, 88% 0%, 100% 12%, 100% 88%, 88% 100%, 12% 100%, 0% 88%, 0% 12%)" },
-  },
-];
 
 function buildGraph(
   images: ImageNode[],
@@ -501,14 +449,13 @@ function buildGraph(
   });
 
   // ── Face row (bottom) ─────────────────────────────────────────────
-  const faceRowW = faces.length * FACE_D + (faces.length - 1) * FACE_GAP;
+  const faceRowW = faces.length * FACE_W + (faces.length - 1) * FACE_GAP;
   const faceRowStartX = -faceRowW / 2;
   const faceRowY = gridStartY + gridH + SECTION_GAP;
 
   faces.forEach((face, i) => {
     const color = faceColorMap.get(face.id) ?? PERSON_COLORS[i % PERSON_COLORS.length];
-    const x = faceRowStartX + i * (FACE_D + FACE_GAP);
-    const shape = FACE_NODE_SHAPES[i % FACE_NODE_SHAPES.length];
+    const x = faceRowStartX + i * (FACE_W + FACE_GAP);
 
     nodes.push({
       id: `face-${face.id}`,
@@ -517,41 +464,69 @@ function buildGraph(
       targetPosition: "top" as const,
       data: {
         label: (
-          <div className="flex flex-col items-center gap-0.5 select-none">
+          // ID-badge card: photo fills top, info strip at bottom
+          <div
+            className="select-none overflow-hidden"
+            style={{
+              width: FACE_W,
+              height: FACE_H,
+              display: "flex",
+              flexDirection: "column",
+              background: `linear-gradient(175deg, ${color}14 0%, #090910 60%)`,
+              border: `2px solid ${color}60`,
+              borderRadius: "18px 18px 10px 10px",
+              boxShadow: `0 0 0 4px ${color}0d, 0 8px 28px ${color}28`,
+            }}
+          >
+            {/* Face photo — fills top portion */}
             <div
-              className="overflow-hidden shrink-0"
               style={{
-                width: 66,
-                height: 66,
-                boxShadow: `0 0 0 2.5px ${color}, 0 0 18px ${color}60`,
-                ...shape.inner,
+                flexShrink: 0,
+                height: FACE_IMG_H,
+                overflow: "hidden",
+                borderRadius: "16px 16px 0 0",
               }}
             >
               <img
                 src={`${BASE}${face.face_image_url}`}
                 alt=""
-                className="w-full h-full object-cover"
+                style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
               />
             </div>
-            <span className="text-[10px] font-bold mt-1.5" style={{ color }}>
-              Person {i + 1}
-            </span>
-            <span className="text-[9px] text-slate-500">
-              {face.matches.length} photo{face.matches.length !== 1 ? "s" : ""}
-            </span>
+
+            {/* Colored accent stripe */}
+            <div style={{ height: 2, flexShrink: 0, background: `linear-gradient(90deg, transparent, ${color}cc, transparent)` }} />
+
+            {/* Name + count */}
+            <div
+              style={{
+                flex: 1,
+                display: "flex",
+                flexDirection: "column",
+                alignItems: "center",
+                justifyContent: "center",
+                gap: 1,
+                padding: "3px 6px",
+              }}
+            >
+              <span style={{ color, fontSize: 10, fontWeight: 700, letterSpacing: "0.02em", lineHeight: 1.2 }}>
+                Person {i + 1}
+              </span>
+              <span style={{ color: "#475569", fontSize: 9, lineHeight: 1.2 }}>
+                {face.matches.length} photo{face.matches.length !== 1 ? "s" : ""}
+              </span>
+            </div>
           </div>
         ),
       },
+      // Transparent shell — visual comes entirely from the label card div
       style: {
-        background: `radial-gradient(circle at 40% 38%, ${color}12, #08080f)`,
-        border: `2px solid ${color}45`,
-        width: FACE_D,
-        height: FACE_D,
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        boxShadow: `0 0 0 6px ${color}0a, 0 0 36px ${color}22`,
-        ...shape.outer,
+        background: "transparent",
+        border: "none",
+        width: FACE_W,
+        height: FACE_H,
+        padding: 0,
+        boxShadow: "none",
       },
     });
   });
@@ -729,6 +704,7 @@ function GraphCanvas({
     <>
       <style>{`
         .react-flow__node { overflow: visible !important; }
+        .react-flow__node[data-id^="face-"] { padding: 0 !important; }
         .react-flow__handle { opacity: 0 !important; width: 1px !important; height: 1px !important; }
         .react-flow__node:hover { z-index: 10 !important; }
       `}</style>
