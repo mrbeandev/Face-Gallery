@@ -1,5 +1,6 @@
 import { useEffect, useRef } from "react";
-import { useJobStore, WSEvent } from "../store/jobStore";
+import type { WSEvent } from "../types";
+import { useJobStore } from "../store/jobStore";
 
 export function useJobWS(jobId: string | null) {
   const handleWSEvent = useJobStore((s) => s.handleWSEvent);

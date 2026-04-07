@@ -1,0 +1,56 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Backend: Start Server",
+      "type": "shell",
+      "command": "venv/bin/uvicorn main:app --reload --port 8000",
+      "options": {
+        "cwd": "${workspaceFolder}/face-detection-webapp/backend"
+      },
+      "group": "build",
+      "presentation": {
+        "label": "Backend (FastAPI)",
+        "group": "servers",
+        "reveal": "always",
+        "panel": "dedicated",
+        "close": false
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "Frontend: Start Dev Server",
+      "type": "shell",
+      "command": "npm run dev",
+      "options": {
+        "cwd": "${workspaceFolder}/face-detection-webapp/frontend",
+        "env": {
+          "PATH": "/home/tulasinath/.nvm/versions/node/v24.12.0/bin:${env:PATH}"
+        }
+      },
+      "group": "build",
+      "presentation": {
+        "label": "Frontend (Vite)",
+        "group": "servers",
+        "reveal": "always",
+        "panel": "dedicated",
+        "close": false
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "Start All Servers",
+      "dependsOn": ["Backend: Start Server", "Frontend: Start Dev Server"],
+      "dependsOrder": "parallel",
+      "group": {
+        "kind": "build",
+        "isDefault": true
+      },
+      "presentation": {
+        "reveal": "always",
+        "panel": "shared"
+      },
+      "problemMatcher": []
+    }
+  ]
+}

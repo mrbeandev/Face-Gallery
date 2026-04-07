@@ -12,7 +12,8 @@ from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from sqlalchemy.orm import Session
 
 from database import SessionLocal, Job, Image as DBImage, UniqueFace, FaceMatch, Notification, new_id, get_db
-from schemas import JobOut, UploadResponse, ResultsOut, UniqueFaceOut, FaceMatchOut
+import json
+from schemas import JobOut, JobSummary, UploadResponse, ResultsOut, UniqueFaceOut, FaceMatchOut, ImageOut, ImageFaceMatchOut
 from processing import FaceProcessor
 
 router = APIRouter()
@@ -142,6 +143,16 @@ async def upload_images(
 
 
 # ------------------------------------------------------------------ #
+# GET /api/jobs  (list recent jobs)                                   #
+# ------------------------------------------------------------------ #
+
+@router.get("/jobs", response_model=list[JobSummary])
+def list_jobs(db: Annotated[Session, Depends(get_db)]):
+    jobs = db.query(Job).order_by(Job.created_at.desc()).limit(50).all()
+    return jobs
+
+
+# ------------------------------------------------------------------ #
 # GET /api/jobs/{job_id}                                              #
 # ------------------------------------------------------------------ #
 
@@ -218,10 +229,12 @@ def get_results(job_id: str, db: Annotated[Session, Depends(get_db)]):
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
 
-    unique_faces = db.query(UniqueFace).filter(UniqueFace.job_id == job_id).all()
-    result_faces = []
+    unique_faces_db = db.query(UniqueFace).filter(UniqueFace.job_id == job_id).all()
+    uf_map = {uf.id: uf for uf in unique_faces_db}
 
-    for uf in unique_faces:
+    # --- List view: face → [images] ---
+    result_faces = []
+    for uf in unique_faces_db:
         matches_db = (
             db.query(FaceMatch, DBImage)
             .join(DBImage, FaceMatch.image_id == DBImage.id)
@@ -244,4 +257,36 @@ def get_results(job_id: str, db: Annotated[Session, Depends(get_db)]):
             )
         )
 
-    return ResultsOut(job_id=job_id, unique_faces=result_faces)
+    # --- Graph view: image → [faces with boxes] ---
+    all_images_db = db.query(DBImage).filter(DBImage.job_id == job_id).all()
+    images_out = []
+    for img in all_images_db:
+        matches_db = (
+            db.query(FaceMatch)
+            .filter(FaceMatch.image_id == img.id)
+            .all()
+        )
+        face_matches_out = []
+        for m in matches_db:
+            uf = uf_map.get(m.unique_face_id)
+            if not uf:
+                continue
+            box = None
+            if m.face_box:
+                try:
+                    box = json.loads(m.face_box)
+                except Exception:
+                    pass
+            face_matches_out.append(ImageFaceMatchOut(
+                unique_face_id=uf.id,
+                face_image_url=f"/static/results/{uf.face_image_path}",
+                face_box=box,
+            ))
+        images_out.append(ImageOut(
+            id=img.id,
+            filename=img.filename,
+            image_url=f"/static/uploads/{job_id}/{img.filename}",
+            faces=face_matches_out,
+        ))
+
+    return ResultsOut(job_id=job_id, unique_faces=result_faces, images=images_out)

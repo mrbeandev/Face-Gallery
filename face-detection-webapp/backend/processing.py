@@ -10,6 +10,7 @@ Progress events are put onto `progress_queue` (a queue.Queue of dicts) which the
 WebSocket router reads and broadcasts to connected clients.
 """
 
+import json
 import os
 import queue
 import threading
@@ -246,22 +247,24 @@ class FaceProcessor:
 
                 try:
                     image = face_recognition.load_image_file(img_rec.stored_path)
-                    current_encodings = face_recognition.face_encodings(image)
+                    face_locs = face_recognition.face_locations(image, number_of_times_to_upsample=0)
+                    current_encodings = face_recognition.face_encodings(image, face_locs)
                 except Exception:
                     job.step2_processed = idx + 1
                     db.commit()
                     continue
 
-                matched_faces = set()
-                for enc in current_encodings:
+                # uf_id -> [top, right, bottom, left] of the matching face in this image
+                matched_faces: dict[str, list[int]] = {}
+                for enc_idx, enc in enumerate(current_encodings):
+                    loc = face_locs[enc_idx]  # (top, right, bottom, left)
                     for uf_id, uf_enc in uf_encodings:
                         if uf_id in matched_faces:
                             continue
-                        matches = face_recognition.compare_faces([uf_enc], enc, tolerance=TOLERANCE)
-                        if True in matches:
-                            matched_faces.add(uf_id)
+                        if True in face_recognition.compare_faces([uf_enc], enc, tolerance=TOLERANCE):
+                            matched_faces[uf_id] = list(loc)
 
-                for uf_id in matched_faces:
+                for uf_id, box in matched_faces.items():
                     folder_name, folder_path = uf_folders[uf_id]
                     dest = os.path.join(folder_path, img_rec.filename)
                     shutil.copy2(img_rec.stored_path, dest)
@@ -271,6 +274,7 @@ class FaceProcessor:
                         job_id=self.job_id,
                         unique_face_id=uf_id,
                         image_id=img_rec.id,
+                        face_box=json.dumps(box),
                     )
                     db.add(match)
                     db.commit()

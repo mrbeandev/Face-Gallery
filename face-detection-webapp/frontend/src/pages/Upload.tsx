@@ -1,9 +1,14 @@
 import { useCallback, useState } from "react";
 import { useDropzone } from "react-dropzone";
 import { useNavigate } from "react-router-dom";
+import { useQuery } from "@tanstack/react-query";
 import { motion, AnimatePresence } from "framer-motion";
-import { Upload, X, ImageIcon, FileArchive, AlertTriangle, Loader2, ScanFace } from "lucide-react";
-import { jobsApi } from "../api/client";
+import {
+  Upload, X, ImageIcon, FileArchive, AlertTriangle,
+  Loader2, ScanFace, Clock, CheckCircle2, XCircle, Pause,
+  ChevronRight,
+} from "lucide-react";
+import { jobsApi, type JobSummary } from "../api/client";
 
 const ALLOWED = ["image/jpeg", "image/png", "image/gif", "image/bmp", "image/webp", "image/tiff"];
 const ALLOWED_EXT = [".jpg", ".jpeg", ".png", ".gif", ".bmp", ".webp", ".tiff", ".tif", ".zip"];
@@ -14,9 +19,56 @@ function formatBytes(bytes: number) {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
-function fileIcon(file: File) {
-  if (file.name.endsWith(".zip")) return <FileArchive className="w-5 h-5 text-brand-400" />;
-  return <ImageIcon className="w-5 h-5 text-slate-400" />;
+function timeAgo(dateStr: string) {
+  const diff = (Date.now() - new Date(dateStr).getTime()) / 1000;
+  if (diff < 60) return "just now";
+  if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
+  if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
+  return `${Math.floor(diff / 86400)}d ago`;
+}
+
+function StatusBadge({ status }: { status: string }) {
+  const map: Record<string, { icon: React.ReactNode; color: string; label: string }> = {
+    completed: { icon: <CheckCircle2 className="w-3.5 h-3.5" />, color: "text-emerald-400 bg-emerald-500/10 border-emerald-500/20", label: "Completed" },
+    processing: { icon: <Loader2 className="w-3.5 h-3.5 animate-spin" />, color: "text-brand-400 bg-brand-500/10 border-brand-500/20", label: "Processing" },
+    paused: { icon: <Pause className="w-3.5 h-3.5" />, color: "text-amber-400 bg-amber-500/10 border-amber-500/20", label: "Paused" },
+    stopped: { icon: <XCircle className="w-3.5 h-3.5" />, color: "text-red-400 bg-red-500/10 border-red-500/20", label: "Stopped" },
+    pending: { icon: <Clock className="w-3.5 h-3.5" />, color: "text-slate-400 bg-white/5 border-white/10", label: "Pending" },
+    failed: { icon: <XCircle className="w-3.5 h-3.5" />, color: "text-red-400 bg-red-500/10 border-red-500/20", label: "Failed" },
+  };
+  const s = map[status] ?? map.pending;
+  return (
+    <span className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full border text-xs font-medium ${s.color}`}>
+      {s.icon}{s.label}
+    </span>
+  );
+}
+
+function RecentJobCard({ job, onClick }: { job: JobSummary; onClick: () => void }) {
+  return (
+    <motion.button
+      initial={{ opacity: 0, y: 8 }}
+      animate={{ opacity: 1, y: 0 }}
+      whileHover={{ scale: 1.01 }}
+      whileTap={{ scale: 0.99 }}
+      onClick={onClick}
+      className="w-full flex items-center gap-4 px-4 py-3 rounded-xl hover:bg-white/5 transition-colors text-left group"
+    >
+      <div className="p-2 rounded-lg bg-white/5 shrink-0">
+        <ImageIcon className="w-4 h-4 text-slate-400" />
+      </div>
+      <div className="flex-1 min-w-0">
+        <div className="flex items-center gap-2 flex-wrap">
+          <span className="text-sm font-medium text-white truncate font-mono">{job.id.slice(0, 8)}…</span>
+          <StatusBadge status={job.status} />
+        </div>
+        <p className="text-xs text-slate-500 mt-0.5">
+          {job.total_images} images · {timeAgo(job.created_at)}
+        </p>
+      </div>
+      <ChevronRight className="w-4 h-4 text-slate-600 group-hover:text-slate-400 shrink-0 transition-colors" />
+    </motion.button>
+  );
 }
 
 export default function UploadPage() {
@@ -26,10 +78,14 @@ export default function UploadPage() {
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const { data: recentJobs } = useQuery({
+    queryKey: ["jobs"],
+    queryFn: () => jobsApi.list().then((r) => r.data),
+    refetchInterval: 5000,
+  });
+
   const onDrop = useCallback((accepted: File[], fileRejections: { file: File }[]) => {
     setError(null);
-
-    // Client-side filter: only images and zips
     const valid: File[] = [];
     const bad: string[] = [];
 
@@ -41,7 +97,6 @@ export default function UploadPage() {
         bad.push(f.name);
       }
     });
-
     fileRejections.forEach(({ file }) => bad.push(file.name));
     setFiles((prev) => {
       const names = new Set(prev.map((f) => f.name));
@@ -50,14 +105,9 @@ export default function UploadPage() {
     if (bad.length) setRejected((prev) => [...prev, ...bad]);
   }, []);
 
-  const { getRootProps, getInputProps, isDragActive } = useDropzone({
-    onDrop,
-    multiple: true,
-    noClick: false,
-  });
+  const { getRootProps, getInputProps, isDragActive } = useDropzone({ onDrop, multiple: true });
 
   const removeFile = (name: string) => setFiles((prev) => prev.filter((f) => f.name !== name));
-  const clearRejected = () => setRejected([]);
 
   const handleUpload = async () => {
     if (!files.length) return;
@@ -73,16 +123,20 @@ export default function UploadPage() {
     }
   };
 
+  const openJob = (job: JobSummary) => {
+    if (job.status === "completed" || job.status === "stopped") {
+      navigate(`/results/${job.id}`);
+    } else {
+      navigate(`/processing/${job.id}`);
+    }
+  };
+
   const totalSize = files.reduce((s, f) => s + f.size, 0);
 
   return (
-    <div className="min-h-screen flex flex-col items-center justify-center p-6 bg-dark-900">
+    <div className="min-h-screen flex flex-col items-center justify-start p-6 bg-dark-900 pb-16">
       {/* Header */}
-      <motion.div
-        initial={{ opacity: 0, y: -20 }}
-        animate={{ opacity: 1, y: 0 }}
-        className="mb-10 text-center"
-      >
+      <motion.div initial={{ opacity: 0, y: -20 }} animate={{ opacity: 1, y: 0 }} className="mb-8 mt-10 text-center">
         <div className="flex items-center justify-center gap-3 mb-3">
           <div className="p-3 rounded-2xl bg-brand-500/10 border border-brand-500/20">
             <ScanFace className="w-8 h-8 text-brand-400" />
@@ -106,19 +160,14 @@ export default function UploadPage() {
             }`}
         >
           <input {...getInputProps()} />
-
-          {/* Animated background glow when dragging */}
           <AnimatePresence>
             {isDragActive && (
               <motion.div
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                exit={{ opacity: 0 }}
+                initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
                 className="absolute inset-0 rounded-3xl bg-brand-500/5 pointer-events-none"
               />
             )}
           </AnimatePresence>
-
           <div className="flex flex-col items-center gap-4">
             <motion.div
               animate={{ scale: isDragActive ? 1.2 : 1 }}
@@ -127,14 +176,12 @@ export default function UploadPage() {
             >
               <Upload className={`w-10 h-10 ${isDragActive ? "text-brand-400" : "text-slate-400"}`} />
             </motion.div>
-
             <div>
               <p className="text-xl font-semibold text-white mb-1">
                 {isDragActive ? "Drop your files here" : "Drag & drop files here"}
               </p>
               <p className="text-slate-400">or click to browse</p>
             </div>
-
             <div className="flex gap-3 flex-wrap justify-center">
               {["JPG", "PNG", "WEBP", "GIF", "BMP", "TIFF", "ZIP"].map((ext) => (
                 <span key={ext} className="px-2.5 py-1 rounded-lg bg-white/5 border border-white/10 text-xs text-slate-400 font-mono">
@@ -145,13 +192,11 @@ export default function UploadPage() {
           </div>
         </motion.div>
 
-        {/* Rejected files warning */}
+        {/* Rejected */}
         <AnimatePresence>
           {rejected.length > 0 && (
             <motion.div
-              initial={{ opacity: 0, height: 0 }}
-              animate={{ opacity: 1, height: "auto" }}
-              exit={{ opacity: 0, height: 0 }}
+              initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }} exit={{ opacity: 0, height: 0 }}
               className="rounded-2xl border border-amber-500/20 bg-amber-500/5 p-4"
             >
               <div className="flex items-start justify-between gap-3">
@@ -164,7 +209,7 @@ export default function UploadPage() {
                     <p className="text-amber-400/70 text-xs">{rejected.join(", ")}</p>
                   </div>
                 </div>
-                <button onClick={clearRejected} className="text-amber-400/50 hover:text-amber-400 transition-colors shrink-0">
+                <button onClick={() => setRejected([])} className="text-amber-400/50 hover:text-amber-400 transition-colors shrink-0">
                   <X className="w-4 h-4" />
                 </button>
               </div>
@@ -175,53 +220,36 @@ export default function UploadPage() {
         {/* File list */}
         <AnimatePresence>
           {files.length > 0 && (
-            <motion.div
-              initial={{ opacity: 0, height: 0 }}
-              animate={{ opacity: 1, height: "auto" }}
-              className="card"
-            >
+            <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }} className="card">
               <div className="p-4 border-b border-white/5 flex items-center justify-between">
                 <span className="text-sm font-medium text-slate-300">
                   {files.length} file{files.length > 1 ? "s" : ""} · {formatBytes(totalSize)}
                 </span>
-                <button
-                  onClick={() => setFiles([])}
-                  className="text-xs text-slate-500 hover:text-red-400 transition-colors"
-                >
+                <button onClick={() => setFiles([])} className="text-xs text-slate-500 hover:text-red-400 transition-colors">
                   Clear all
                 </button>
               </div>
-              <div className="max-h-64 overflow-y-auto divide-y divide-white/5">
+              <div className="max-h-56 overflow-y-auto divide-y divide-white/5">
                 {files.map((file) => (
                   <motion.div
                     key={file.name}
-                    initial={{ opacity: 0, x: -10 }}
-                    animate={{ opacity: 1, x: 0 }}
-                    exit={{ opacity: 0, x: 10 }}
+                    initial={{ opacity: 0, x: -10 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: 10 }}
                     className="flex items-center gap-3 px-4 py-3 hover:bg-white/2 group"
                   >
-                    {/* Thumbnail for images */}
                     {!file.name.endsWith(".zip") ? (
                       <div className="w-10 h-10 rounded-lg overflow-hidden bg-white/5 shrink-0">
-                        <img
-                          src={URL.createObjectURL(file)}
-                          alt=""
-                          className="w-full h-full object-cover"
-                        />
+                        <img src={URL.createObjectURL(file)} alt="" className="w-full h-full object-cover" />
                       </div>
                     ) : (
                       <div className="w-10 h-10 rounded-lg bg-brand-500/10 flex items-center justify-center shrink-0">
-                        {fileIcon(file)}
+                        <FileArchive className="w-5 h-5 text-brand-400" />
                       </div>
                     )}
                     <div className="flex-1 min-w-0">
                       <p className="text-sm text-white truncate">{file.name}</p>
                       <p className="text-xs text-slate-500">{formatBytes(file.size)}</p>
                     </div>
-                    <button
-                      onClick={() => removeFile(file.name)}
-                      className="opacity-0 group-hover:opacity-100 text-slate-600 hover:text-red-400 transition-all"
-                    >
+                    <button onClick={() => removeFile(file.name)} className="opacity-0 group-hover:opacity-100 text-slate-600 hover:text-red-400 transition-all">
                       <X className="w-4 h-4" />
                     </button>
                   </motion.div>
@@ -231,20 +259,14 @@ export default function UploadPage() {
           )}
         </AnimatePresence>
 
-        {/* Error */}
         <AnimatePresence>
           {error && (
-            <motion.p
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              className="text-red-400 text-sm text-center"
-            >
+            <motion.p initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="text-red-400 text-sm text-center">
               {error}
             </motion.p>
           )}
         </AnimatePresence>
 
-        {/* Upload button */}
         <motion.button
           whileTap={{ scale: 0.97 }}
           onClick={handleUpload}
@@ -252,22 +274,41 @@ export default function UploadPage() {
           className="btn-primary w-full flex items-center justify-center gap-2 py-4 text-base"
         >
           {uploading ? (
-            <>
-              <Loader2 className="w-5 h-5 animate-spin" />
-              Uploading…
-            </>
+            <><Loader2 className="w-5 h-5 animate-spin" />Uploading…</>
           ) : (
             <>
               <Upload className="w-5 h-5" />
               Upload & Start Analysis
               {files.length > 0 && (
-                <span className="ml-1 px-2 py-0.5 rounded-full bg-black/20 text-xs">
-                  {files.length}
-                </span>
+                <span className="ml-1 px-2 py-0.5 rounded-full bg-black/20 text-xs">{files.length}</span>
               )}
             </>
           )}
         </motion.button>
+
+        {/* Recent sessions */}
+        <AnimatePresence>
+          {recentJobs && recentJobs.length > 0 && (
+            <motion.div
+              initial={{ opacity: 0, y: 12 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.15 }}
+              className="card mt-2"
+            >
+              <div className="px-4 py-3 border-b border-white/5">
+                <div className="flex items-center gap-2">
+                  <Clock className="w-4 h-4 text-slate-500" />
+                  <span className="text-sm font-medium text-slate-400">Recent Sessions</span>
+                </div>
+              </div>
+              <div className="p-2 max-h-64 overflow-y-auto">
+                {recentJobs.map((job) => (
+                  <RecentJobCard key={job.id} job={job} onClick={() => openJob(job)} />
+                ))}
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
       </div>
     </div>
   );

@@ -4,16 +4,19 @@ export const api = axios.create({
   baseURL: "http://localhost:8000",
 });
 
-export interface Job {
+export interface JobSummary {
   id: string;
   status: string;
-  step: number;
   total_images: number;
   processed_images: number;
-  step2_total: number;
-  step2_processed: number;
   created_at: string;
   updated_at: string;
+}
+
+export interface Job extends JobSummary {
+  step: number;
+  step2_total: number;
+  step2_processed: number;
   notifications: Notification[];
 }
 
@@ -30,6 +33,7 @@ export interface UploadResponse {
   rejected_files: string[];
 }
 
+// List-view: face → images
 export interface FaceMatch {
   image_id: string;
   filename: string;
@@ -42,12 +46,28 @@ export interface UniqueFace {
   matches: FaceMatch[];
 }
 
+// Graph-view: image → faces (with bounding boxes)
+export interface ImageFaceMatch {
+  unique_face_id: string;
+  face_image_url: string;
+  face_box: [number, number, number, number] | null; // [top, right, bottom, left]
+}
+
+export interface ImageNode {
+  id: string;
+  filename: string;
+  image_url: string;
+  faces: ImageFaceMatch[];
+}
+
 export interface ResultsData {
   job_id: string;
   unique_faces: UniqueFace[];
+  images: ImageNode[];
 }
 
 export const jobsApi = {
+  list: () => api.get<JobSummary[]>("/api/jobs"),
   upload: (files: File[]) => {
     const form = new FormData();
     files.forEach((f) => form.append("files", f));

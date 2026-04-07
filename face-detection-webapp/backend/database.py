@@ -2,7 +2,7 @@ import uuid
 import pickle
 from datetime import datetime
 from sqlalchemy import (
-    create_engine, Column, String, Integer, DateTime, Text, LargeBinary, ForeignKey
+    create_engine, Column, String, Integer, DateTime, Text, LargeBinary, ForeignKey, text
 )
 from sqlalchemy.orm import declarative_base, sessionmaker, relationship
 
@@ -86,6 +86,7 @@ class FaceMatch(Base):
     job_id = Column(String, ForeignKey("jobs.id"), nullable=False)
     unique_face_id = Column(String, ForeignKey("unique_faces.id"), nullable=False)
     image_id = Column(String, ForeignKey("images.id"), nullable=False)
+    face_box = Column(Text, nullable=True)   # JSON: [top, right, bottom, left] in pixels
 
     unique_face = relationship("UniqueFace", back_populates="matches")
     image = relationship("Image", back_populates="matches")
@@ -104,3 +105,12 @@ class Notification(Base):
 
 
 Base.metadata.create_all(bind=engine)
+
+# Migrate: add face_box column if it doesn't exist yet (SQLite doesn't support
+# ADD COLUMN IF NOT EXISTS, so we catch the error)
+with engine.connect() as conn:
+    try:
+        conn.execute(text("ALTER TABLE face_matches ADD COLUMN face_box TEXT"))
+        conn.commit()
+    except Exception:
+        pass  # column already exists
