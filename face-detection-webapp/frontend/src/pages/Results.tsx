@@ -11,6 +11,7 @@ import "@xyflow/react/dist/style.css";
 import {
   LayoutGrid, Share2, ArrowLeft, X, Users, ImageIcon,
   Loader2, ChevronLeft, ChevronRight, Eye, EyeOff,
+  Maximize2, Minimize2, Check, AlertCircle, ChevronDown,
 } from "lucide-react";
 import { jobsApi, type UniqueFace, type ImageNode } from "../api/client";
 
@@ -22,23 +23,35 @@ const PERSON_COLORS = [
 ];
 
 // ------------------------------------------------------------------ //
-// Photo popup with face bounding box overlay                           //
+// Photo popup with face bounding box overlay + manual assignment      //
 // ------------------------------------------------------------------ //
 function PhotoPopup({
   image,
+  allFaces,
+  jobId,
   faceColorMap,
   onClose,
+  onAssignmentChange,
 }: {
   image: ImageNode;
+  allFaces: UniqueFace[];
+  jobId: string;
   faceColorMap: Map<string, string>;
   onClose: () => void;
+  onAssignmentChange: () => void;
 }) {
   const [showFaces, setShowFaces] = useState(true);
   const [imgSize, setImgSize] = useState<{ w: number; h: number; nw: number; nh: number } | null>(null);
+  const [pendingFaceId, setPendingFaceId] = useState<string | null>(null);
   const imgRef = useRef<HTMLImageElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
-  // Draw face boxes on canvas whenever toggle or image size changes
+  const assignedFaceIds = useMemo(
+    () => new Set(image.faces.map((f) => f.unique_face_id)),
+    [image.faces]
+  );
+
+  // Draw face boxes whenever toggle or size changes
   useEffect(() => {
     if (!showFaces || !imgSize || !canvasRef.current) return;
     const ctx = canvasRef.current.getContext("2d");
@@ -65,7 +78,6 @@ function PhotoPopup({
       ctx.shadowBlur = 8;
       ctx.strokeRect(x, y, bw, bh);
 
-      // Label background
       ctx.shadowBlur = 0;
       const label = `Person ${[...faceColorMap.keys()].indexOf(f.unique_face_id) + 1}`;
       ctx.font = "bold 13px system-ui";
@@ -80,12 +92,22 @@ function PhotoPopup({
   const handleImgLoad = () => {
     const el = imgRef.current;
     if (!el) return;
-    setImgSize({
-      w: el.naturalWidth,
-      h: el.naturalHeight,
-      nw: el.width,
-      nh: el.height,
-    });
+    setImgSize({ w: el.naturalWidth, h: el.naturalHeight, nw: el.width, nh: el.height });
+  };
+
+  const handleToggle = async (face: UniqueFace) => {
+    if (pendingFaceId) return;
+    setPendingFaceId(face.id);
+    try {
+      if (assignedFaceIds.has(face.id)) {
+        await jobsApi.removeMatch(jobId, image.id, face.id);
+      } else {
+        await jobsApi.addMatch(jobId, image.id, face.id);
+      }
+      onAssignmentChange();
+    } finally {
+      setPendingFaceId(null);
+    }
   };
 
   const hasFaceBoxes = image.faces.some((f) => f.face_box);
@@ -99,14 +121,14 @@ function PhotoPopup({
       <motion.div
         initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }}
         onClick={(e) => e.stopPropagation()}
-        className="relative max-w-4xl max-h-[90vh] flex flex-col gap-3"
+        className="relative max-w-4xl w-full max-h-[90vh] flex flex-col gap-3 overflow-y-auto"
       >
         {/* Toolbar */}
-        <div className="flex items-center justify-between">
+        <div className="flex items-center justify-between sticky top-0 bg-transparent">
           <div className="flex items-center gap-2">
             <span className="text-white font-medium">{image.filename}</span>
             <span className="text-slate-500 text-sm">·</span>
-            <span className="text-slate-400 text-sm">{image.faces.length} face{image.faces.length !== 1 ? "s" : ""}</span>
+            <span className="text-slate-400 text-sm">{image.faces.length} face{image.faces.length !== 1 ? "s" : ""} detected</span>
           </div>
           <div className="flex items-center gap-2">
             {hasFaceBoxes && (
@@ -129,12 +151,12 @@ function PhotoPopup({
         </div>
 
         {/* Image + canvas overlay */}
-        <div className="relative inline-block">
+        <div className="relative inline-block self-center">
           <img
             ref={imgRef}
             src={`${BASE}${image.image_url}`}
             alt={image.filename}
-            className="max-h-[75vh] max-w-full rounded-2xl object-contain shadow-2xl block"
+            className="max-h-[60vh] max-w-full rounded-2xl object-contain shadow-2xl block"
             onLoad={handleImgLoad}
           />
           {showFaces && hasFaceBoxes && (
@@ -148,24 +170,63 @@ function PhotoPopup({
           )}
         </div>
 
-        {/* Face strip at bottom */}
-        {image.faces.length > 0 && (
-          <div className="flex items-center gap-3 flex-wrap">
-            {image.faces.map((f, i) => {
-              const color = faceColorMap.get(f.unique_face_id) ?? "#eab308";
-              const personIdx = [...faceColorMap.keys()].indexOf(f.unique_face_id) + 1;
-              return (
-                <div key={f.unique_face_id} className="flex items-center gap-2">
-                  <div
-                    className="w-8 h-8 rounded-full overflow-hidden ring-2"
-                    style={{ ringColor: color, boxShadow: `0 0 0 2px ${color}` }}
+        {/* Manual face assignment panel */}
+        {allFaces.length > 0 && (
+          <div className="rounded-2xl bg-dark-800/90 border border-white/10 p-4 backdrop-blur">
+            <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-3">
+              Assign faces to this photo
+            </p>
+            <div className="flex gap-3 flex-wrap">
+              {allFaces.map((f, i) => {
+                const color = faceColorMap.get(f.id) ?? PERSON_COLORS[i % PERSON_COLORS.length];
+                const isAssigned = assignedFaceIds.has(f.id);
+                const isPending = pendingFaceId === f.id;
+                return (
+                  <button
+                    key={f.id}
+                    onClick={() => handleToggle(f)}
+                    disabled={!!pendingFaceId}
+                    title={isAssigned ? `Remove Person ${i + 1}` : `Assign Person ${i + 1}`}
+                    className={`flex flex-col items-center gap-1.5 p-2.5 rounded-xl border transition-all select-none
+                      ${isAssigned
+                        ? "opacity-100"
+                        : "opacity-50 hover:opacity-80 bg-white/5 border-white/10"
+                      }
+                      ${isPending ? "cursor-wait" : "cursor-pointer"}
+                    `}
+                    style={isAssigned ? { background: `${color}18`, borderColor: `${color}55` } : {}}
                   >
-                    <img src={`${BASE}${f.face_image_url}`} alt="" className="w-full h-full object-cover" />
-                  </div>
-                  <span className="text-xs font-medium" style={{ color }}>Person {personIdx}</span>
-                </div>
-              );
-            })}
+                    <div className="relative">
+                      <div
+                        className="w-12 h-12 rounded-full overflow-hidden"
+                        style={{ boxShadow: isAssigned ? `0 0 0 2.5px ${color}` : "0 0 0 1px rgba(255,255,255,0.1)" }}
+                      >
+                        <img src={`${BASE}${f.face_image_url}`} alt="" className="w-full h-full object-cover" />
+                      </div>
+                      {isPending && (
+                        <div className="absolute inset-0 rounded-full bg-black/60 flex items-center justify-center">
+                          <Loader2 className="w-4 h-4 animate-spin text-white" />
+                        </div>
+                      )}
+                      {isAssigned && !isPending && (
+                        <div
+                          className="absolute -top-1 -right-1 w-4 h-4 rounded-full flex items-center justify-center"
+                          style={{ background: color }}
+                        >
+                          <Check className="w-2.5 h-2.5 text-black" strokeWidth={3} />
+                        </div>
+                      )}
+                    </div>
+                    <span className="text-[10px] font-semibold" style={{ color: isAssigned ? color : "#64748b" }}>
+                      P{i + 1}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+            <p className="text-[10px] text-slate-600 mt-3">
+              Click a person to assign or remove them from this photo. Manual assignments have no bounding box.
+            </p>
           </div>
         )}
       </motion.div>
@@ -304,7 +365,7 @@ function buildGraph(
   images: ImageNode[],
   faces: UniqueFace[],
   faceColorMap: Map<string, string>,
-  onPhotoDoubleClick: (img: ImageNode) => void,
+  onPhotoDoubleClick: (imgId: string) => void,
 ): { nodes: Node[]; edges: Edge[] } {
   const nodes: Node[] = [];
   const edges: Edge[] = [];
@@ -338,7 +399,7 @@ function buildGraph(
         label: (
           <div
             className="flex flex-col items-center gap-1 select-none w-full h-full"
-            onDoubleClick={() => onPhotoDoubleClick(img)}
+            onDoubleClick={() => onPhotoDoubleClick(img.id)}
           >
             <div className="w-[106px] h-[106px] rounded-xl overflow-hidden border border-white/10 shrink-0">
               <img
@@ -458,23 +519,51 @@ function buildGraph(
 }
 
 function GraphCanvas({
-  images, faces, faceColorMap,
+  images, faces, faceColorMap, jobId, onRefetch,
 }: {
   images: ImageNode[];
   faces: UniqueFace[];
   faceColorMap: Map<string, string>;
+  jobId: string;
+  onRefetch: () => void;
 }) {
-  const [popup, setPopup] = useState<ImageNode | null>(null);
+  const [popupImageId, setPopupImageId] = useState<string | null>(null);
   const [hoveredFaceId, setHoveredFaceId] = useState<string | null>(null);
+  const [isFullscreen, setIsFullscreen] = useState(false);
+  const containerRef = useRef<HTMLDivElement>(null);
 
-  // Build graph once — stable positions
+  // Derive popup image from latest data so it reflects assignment changes live
+  const popupImage = useMemo(
+    () => (popupImageId ? images.find((i) => i.id === popupImageId) ?? null : null),
+    [popupImageId, images]
+  );
+
+  useEffect(() => {
+    const onFsChange = () => setIsFullscreen(!!document.fullscreenElement);
+    document.addEventListener("fullscreenchange", onFsChange);
+    return () => document.removeEventListener("fullscreenchange", onFsChange);
+  }, []);
+
+  const toggleFullscreen = useCallback(() => {
+    if (!document.fullscreenElement) {
+      containerRef.current?.requestFullscreen();
+    } else {
+      document.exitFullscreen();
+    }
+  }, []);
+
+  // Rebuild graph when data changes (e.g. after manual face assignment)
   const { nodes: initNodes, edges: initEdges } = useMemo(
-    () => buildGraph(images, faces, faceColorMap, setPopup),
+    () => buildGraph(images, faces, faceColorMap, setPopupImageId),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [images.length, faces.length]
+    [images, faces]
   );
   const [nodes, setNodes, onNodesChange] = useNodesState(initNodes);
   const [edges, setEdges, onEdgesChange] = useEdgesState(initEdges);
+
+  // Sync graph nodes/edges after refetch
+  useEffect(() => { setNodes(initNodes); }, [initNodes, setNodes]);
+  useEffect(() => { setEdges(initEdges); }, [initEdges, setEdges]);
 
   // Set of photo node IDs connected to the hovered face
   const connectedPhotoIds = useMemo(() => {
@@ -583,7 +672,11 @@ function GraphCanvas({
         .react-flow__node:hover { z-index: 10 !important; }
       `}</style>
 
-      <div className="relative w-full h-[calc(100vh-220px)] rounded-2xl overflow-hidden border border-white/5">
+      <div
+        ref={containerRef}
+        className="relative w-full rounded-2xl overflow-hidden border border-white/5"
+        style={{ height: isFullscreen ? "100vh" : "calc(100vh - 220px)" }}
+      >
         <ReactFlow
           nodes={nodes}
           edges={edges}
@@ -651,6 +744,15 @@ function GraphCanvas({
           })}
         </div>
 
+        {/* Fullscreen toggle */}
+        <button
+          onClick={toggleFullscreen}
+          className="absolute top-3 right-3 z-10 p-2 rounded-xl bg-black/50 border border-white/10 text-slate-400 hover:text-white hover:bg-black/70 backdrop-blur transition-all"
+          title={isFullscreen ? "Exit fullscreen" : "Enter fullscreen"}
+        >
+          {isFullscreen ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
+        </button>
+
         {/* Hint */}
         <div className="absolute bottom-3 left-1/2 -translate-x-1/2 px-3 py-1.5 rounded-full bg-black/50 border border-white/08 text-[10px] text-slate-500 pointer-events-none backdrop-blur whitespace-nowrap">
           Double-click a photo · Scroll to zoom · Drag to pan
@@ -658,8 +760,15 @@ function GraphCanvas({
       </div>
 
       <AnimatePresence>
-        {popup && (
-          <PhotoPopup image={popup} faceColorMap={faceColorMap} onClose={() => setPopup(null)} />
+        {popupImage && (
+          <PhotoPopup
+            image={popupImage}
+            allFaces={faces}
+            jobId={jobId}
+            faceColorMap={faceColorMap}
+            onClose={() => setPopupImageId(null)}
+            onAssignmentChange={onRefetch}
+          />
         )}
       </AnimatePresence>
     </>
@@ -673,8 +782,10 @@ export default function ResultsPage() {
   const { jobId } = useParams<{ jobId: string }>();
   const navigate = useNavigate();
   const [view, setView] = useState<"list" | "graph">("list");
+  const [undetectedOpen, setUndetectedOpen] = useState(true);
+  const [undetectedPopupId, setUndetectedPopupId] = useState<string | null>(null);
 
-  const { data, isLoading, error } = useQuery({
+  const { data, isLoading, error, refetch } = useQuery({
     queryKey: ["results", jobId],
     queryFn: () => jobsApi.results(jobId!).then((r) => r.data),
     enabled: !!jobId,
@@ -683,10 +794,15 @@ export default function ResultsPage() {
   const faces = data?.unique_faces ?? [];
   const images = data?.images ?? [];
   const totalPhotos = faces.reduce((s, f) => s + f.matches.length, 0);
+  const undetectedImages = images.filter((img) => img.faces.length === 0);
+  const undetectedPopupImage = undetectedPopupId
+    ? images.find((i) => i.id === undetectedPopupId) ?? null
+    : null;
 
   // Build stable face → color map
-  const faceColorMap = new Map(
-    faces.map((f, i) => [f.id, PERSON_COLORS[i % PERSON_COLORS.length]])
+  const faceColorMap = useMemo(
+    () => new Map(faces.map((f, i) => [f.id, PERSON_COLORS[i % PERSON_COLORS.length]])),
+    [faces]
   );
 
   return (
@@ -763,12 +879,95 @@ export default function ResultsPage() {
             ) : (
               <motion.div key="graph" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="relative">
                 <ReactFlowProvider>
-                  <GraphCanvas images={images} faces={faces} faceColorMap={faceColorMap} />
+                  <GraphCanvas
+                    images={images}
+                    faces={faces}
+                    faceColorMap={faceColorMap}
+                    jobId={jobId!}
+                    onRefetch={refetch}
+                  />
                 </ReactFlowProvider>
               </motion.div>
             )}
           </AnimatePresence>
         )}
+
+        {/* Undetected images section */}
+        {!isLoading && !error && undetectedImages.length > 0 && (
+          <motion.div
+            initial={{ opacity: 0, y: 16 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="mt-8 rounded-2xl border border-white/8 bg-dark-800/50 overflow-hidden"
+          >
+            <button
+              onClick={() => setUndetectedOpen((v) => !v)}
+              className="w-full flex items-center justify-between px-5 py-4 hover:bg-white/3 transition-colors"
+            >
+              <div className="flex items-center gap-3">
+                <AlertCircle className="w-5 h-5 text-amber-400" />
+                <span className="text-white font-semibold">No faces detected</span>
+                <span className="px-2 py-0.5 rounded-full bg-amber-500/10 border border-amber-500/20 text-amber-400 text-xs font-medium">
+                  {undetectedImages.length} photo{undetectedImages.length !== 1 ? "s" : ""}
+                </span>
+              </div>
+              <div className="flex items-center gap-2 text-slate-400 text-sm">
+                <span className="hidden sm:inline">Click to assign faces manually</span>
+                <ChevronDown
+                  className={`w-4 h-4 transition-transform ${undetectedOpen ? "rotate-180" : ""}`}
+                />
+              </div>
+            </button>
+
+            <AnimatePresence>
+              {undetectedOpen && (
+                <motion.div
+                  initial={{ height: 0 }} animate={{ height: "auto" }} exit={{ height: 0 }}
+                  className="overflow-hidden"
+                >
+                  <div className="px-5 pb-5 grid grid-cols-2 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-8 gap-3">
+                    {undetectedImages.map((img) => (
+                      <button
+                        key={img.id}
+                        onClick={() => setUndetectedPopupId(img.id)}
+                        className="group relative aspect-square rounded-xl overflow-hidden border border-white/8 hover:border-amber-500/40 transition-all"
+                      >
+                        <img
+                          src={`${BASE}${img.image_url}`}
+                          alt={img.filename}
+                          className="w-full h-full object-cover opacity-60 group-hover:opacity-90 transition-opacity"
+                        />
+                        <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/80 to-transparent p-1.5">
+                          <p className="text-[9px] text-slate-300 truncate text-center leading-tight">
+                            {img.filename}
+                          </p>
+                        </div>
+                        <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                          <div className="bg-black/60 rounded-lg px-2 py-1 text-[10px] text-white font-medium backdrop-blur">
+                            Assign faces
+                          </div>
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </motion.div>
+        )}
+
+        {/* Popup for undetected section */}
+        <AnimatePresence>
+          {undetectedPopupImage && (
+            <PhotoPopup
+              image={undetectedPopupImage}
+              allFaces={faces}
+              jobId={jobId!}
+              faceColorMap={faceColorMap}
+              onClose={() => setUndetectedPopupId(null)}
+              onAssignmentChange={refetch}
+            />
+          )}
+        </AnimatePresence>
       </div>
     </div>
   );

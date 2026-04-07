@@ -78,4 +78,8 @@ export const jobsApi = {
   pause: (jobId: string) => api.post(`/api/jobs/${jobId}/pause`),
   stop: (jobId: string) => api.post(`/api/jobs/${jobId}/stop`),
   results: (jobId: string) => api.get<ResultsData>(`/api/jobs/${jobId}/results`),
+  addMatch: (jobId: string, imageId: string, faceId: string) =>
+    api.post(`/api/jobs/${jobId}/images/${imageId}/faces/${faceId}`),
+  removeMatch: (jobId: string, imageId: string, faceId: string) =>
+    api.delete(`/api/jobs/${jobId}/images/${imageId}/faces/${faceId}`),
 };

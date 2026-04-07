@@ -223,6 +223,62 @@ def stop_job(job_id: str, db: Annotated[Session, Depends(get_db)]):
 # GET /api/jobs/{job_id}/results                                      #
 # ------------------------------------------------------------------ #
 
+# ------------------------------------------------------------------ #
+# POST /api/jobs/{job_id}/images/{image_id}/faces/{unique_face_id}   #
+# ------------------------------------------------------------------ #
+
+@router.post("/jobs/{job_id}/images/{image_id}/faces/{unique_face_id}", status_code=201)
+def add_face_match_manual(
+    job_id: str, image_id: str, unique_face_id: str,
+    db: Annotated[Session, Depends(get_db)],
+):
+    job = db.get(Job, job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+    img = db.get(DBImage, image_id)
+    if not img or img.job_id != job_id:
+        raise HTTPException(status_code=404, detail="Image not found")
+    face = db.get(UniqueFace, unique_face_id)
+    if not face or face.job_id != job_id:
+        raise HTTPException(status_code=404, detail="Face not found")
+
+    existing = db.query(FaceMatch).filter_by(image_id=image_id, unique_face_id=unique_face_id).first()
+    if existing:
+        return {"status": "already_exists"}
+
+    match = FaceMatch(
+        id=new_id(),
+        job_id=job_id,
+        unique_face_id=unique_face_id,
+        image_id=image_id,
+        face_box=None,
+    )
+    db.add(match)
+    db.commit()
+    return {"status": "created"}
+
+
+# ------------------------------------------------------------------ #
+# DELETE /api/jobs/{job_id}/images/{image_id}/faces/{unique_face_id} #
+# ------------------------------------------------------------------ #
+
+@router.delete("/jobs/{job_id}/images/{image_id}/faces/{unique_face_id}")
+def remove_face_match_manual(
+    job_id: str, image_id: str, unique_face_id: str,
+    db: Annotated[Session, Depends(get_db)],
+):
+    match = db.query(FaceMatch).filter_by(image_id=image_id, unique_face_id=unique_face_id).first()
+    if not match:
+        raise HTTPException(status_code=404, detail="Match not found")
+    db.delete(match)
+    db.commit()
+    return {"status": "deleted"}
+
+
+# ------------------------------------------------------------------ #
+# GET /api/jobs/{job_id}/results                                      #
+# ------------------------------------------------------------------ #
+
 @router.get("/jobs/{job_id}/results", response_model=ResultsOut)
 def get_results(job_id: str, db: Annotated[Session, Depends(get_db)]):
     job = db.get(Job, job_id)
