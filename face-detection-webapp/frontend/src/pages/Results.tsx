@@ -5,13 +5,13 @@ import { motion, AnimatePresence } from "framer-motion";
 import {
   ReactFlow, Background, Controls, MiniMap,
   type Node, type Edge, useNodesState, useEdgesState,
-  BackgroundVariant, ReactFlowProvider,
+  BackgroundVariant, ReactFlowProvider, useReactFlow,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import {
   LayoutGrid, Share2, ArrowLeft, X, Users, ImageIcon,
   Loader2, ChevronLeft, ChevronRight, Eye, EyeOff,
-  Maximize2, Minimize2, Check, AlertCircle, ChevronDown,
+  Maximize2, Minimize2, Check, AlertCircle, ChevronDown, RotateCcw,
 } from "lucide-react";
 import { jobsApi, type UniqueFace, type ImageNode } from "../api/client";
 
@@ -588,6 +588,13 @@ function GraphCanvas({
     }
   }, []);
 
+  const { fitView } = useReactFlow();
+  const resetLayout = useCallback(() => {
+    setNodes(initNodes);
+    setEdges(initEdges);
+    setTimeout(() => fitView({ padding: 0.2, duration: 400 }), 50);
+  }, [initNodes, initEdges, setNodes, setEdges, fitView]);
+
   // Rebuild graph when data changes (e.g. after manual face assignment)
   const { nodes: initNodes, edges: initEdges } = useMemo(
     () => buildGraph(images, faces, faceColorMap, setPopupImageId),
@@ -781,14 +788,23 @@ function GraphCanvas({
           })}
         </div>
 
-        {/* Fullscreen toggle */}
-        <button
-          onClick={toggleFullscreen}
-          className="absolute top-3 right-3 z-10 p-2 rounded-xl bg-black/50 border border-white/10 text-slate-400 hover:text-white hover:bg-black/70 backdrop-blur transition-all"
-          title={isFullscreen ? "Exit fullscreen" : "Enter fullscreen"}
-        >
-          {isFullscreen ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
-        </button>
+        {/* Top-right controls */}
+        <div className="absolute top-3 right-3 z-10 flex items-center gap-1.5">
+          <button
+            onClick={resetLayout}
+            className="p-2 rounded-xl bg-black/50 border border-white/10 text-slate-400 hover:text-white hover:bg-black/70 backdrop-blur transition-all"
+            title="Reset node positions"
+          >
+            <RotateCcw className="w-4 h-4" />
+          </button>
+          <button
+            onClick={toggleFullscreen}
+            className="p-2 rounded-xl bg-black/50 border border-white/10 text-slate-400 hover:text-white hover:bg-black/70 backdrop-blur transition-all"
+            title={isFullscreen ? "Exit fullscreen" : "Enter fullscreen"}
+          >
+            {isFullscreen ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
+          </button>
+        </div>
 
         {/* Hint */}
         <div className="absolute bottom-3 left-1/2 -translate-x-1/2 px-3 py-1.5 rounded-full bg-black/50 border border-white/08 text-[10px] text-slate-500 pointer-events-none backdrop-blur whitespace-nowrap">
