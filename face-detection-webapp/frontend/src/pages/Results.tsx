@@ -5,7 +5,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import {
   ReactFlow, Background, Controls, MiniMap,
   type Node, type Edge, useNodesState, useEdgesState,
-  BackgroundVariant, useReactFlow, ReactFlowProvider,
+  BackgroundVariant, ReactFlowProvider,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import {
@@ -286,8 +286,16 @@ function ListView({ faces, faceColorMap }: { faces: UniqueFace[]; faceColorMap: 
 }
 
 // ------------------------------------------------------------------ //
-// Graph View — photos as primary nodes, face nodes attach to them     //
+// Graph View — bipartite layout: photos left, faces right             //
 // ------------------------------------------------------------------ //
+
+const PHOTO_W = 130;
+const PHOTO_H = 150;
+const FACE_W = 90;
+const FACE_H = 90;
+const PHOTO_GAP = 40;   // vertical gap between photo nodes
+const FACE_GAP = 30;    // vertical gap between face nodes
+const COL_GAP = 360;    // horizontal distance left-col → right-col
 
 function buildGraph(
   images: ImageNode[],
@@ -298,100 +306,98 @@ function buildGraph(
   const nodes: Node[] = [];
   const edges: Edge[] = [];
 
-  // Layout: photos in a grid, face nodes clustered nearby
-  const cols = Math.ceil(Math.sqrt(images.length));
-  const PHOTO_GAP_X = 260;
-  const PHOTO_GAP_Y = 220;
-
-  // Build unique face index
   const faceIndexMap = new Map(faces.map((f, i) => [f.id, i]));
 
-  images.forEach((img, idx) => {
-    const col = idx % cols;
-    const row = Math.floor(idx / cols);
-    const px = col * PHOTO_GAP_X;
-    const py = row * PHOTO_GAP_Y;
+  // --- Left column: photo nodes, evenly spaced ---
+  const totalPhotoH = images.length * PHOTO_H + (images.length - 1) * PHOTO_GAP;
+  const totalFaceH  = faces.length  * FACE_H  + (faces.length  - 1) * FACE_GAP;
+  const canvasH = Math.max(totalPhotoH, totalFaceH);
 
-    // Photo node
+  const photoStartY = (canvasH - totalPhotoH) / 2;
+  const faceStartY  = (canvasH - totalFaceH)  / 2;
+
+  images.forEach((img, idx) => {
+    const py = photoStartY + idx * (PHOTO_H + PHOTO_GAP);
+
     nodes.push({
       id: `photo-${img.id}`,
-      position: { x: px, y: py },
+      position: { x: 0, y: py },
       data: {
         label: (
           <div
-            className="flex flex-col items-center gap-1 cursor-pointer select-none"
+            className="flex flex-col items-center gap-1 select-none"
             onDoubleClick={() => onPhotoDoubleClick(img)}
-            title="Double-click to view full image"
+            title="Double-click to inspect"
           >
-            <div className="w-20 h-20 rounded-xl overflow-hidden border border-white/10 hover:border-brand-400 transition-colors">
+            <div className="w-24 h-24 rounded-xl overflow-hidden border border-white/10 group-hover:border-brand-400 transition-colors">
               <img src={`${BASE}${img.image_url}`} alt={img.filename} className="w-full h-full object-cover" />
             </div>
-            <span className="text-[10px] text-slate-400 truncate max-w-[90px] text-center">{img.filename}</span>
-            {img.faces.length > 0 && (
-              <span className="text-[9px] text-slate-500">{img.faces.length} face{img.faces.length !== 1 ? "s" : ""}</span>
-            )}
+            <span className="text-[10px] text-slate-300 truncate max-w-[110px] text-center font-medium">{img.filename}</span>
+            <span className="text-[9px] text-slate-500">{img.faces.length} face{img.faces.length !== 1 ? "s" : ""} · dbl-click</span>
           </div>
         ),
       },
       style: {
         background: "#12121a",
         border: "1px solid rgba(255,255,255,0.08)",
-        borderRadius: "14px",
-        width: 110,
-        padding: "8px 6px 6px",
+        borderRadius: "16px",
+        width: PHOTO_W,
+        height: PHOTO_H,
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
         cursor: "default",
       },
     });
+  });
 
-    // Face nodes attached to this photo (deduplicated — one face node per unique face globally)
-    img.faces.forEach((faceMatch, fi) => {
-      const faceNodeId = `face-${faceMatch.unique_face_id}`;
+  // --- Right column: face nodes, evenly spaced ---
+  faces.forEach((face, idx) => {
+    const color = faceColorMap.get(face.id) ?? PERSON_COLORS[idx % PERSON_COLORS.length];
+    const personIdx = idx + 1;
+    const fy = faceStartY + idx * (FACE_H + FACE_GAP);
+
+    nodes.push({
+      id: `face-${face.id}`,
+      position: { x: COL_GAP, y: fy },
+      data: {
+        label: (
+          <div className="flex flex-col items-center gap-1">
+            <div className="w-12 h-12 rounded-full overflow-hidden" style={{ boxShadow: `0 0 0 2.5px ${color}` }}>
+              <img src={`${BASE}${face.face_image_url}`} alt="" className="w-full h-full object-cover" />
+            </div>
+            <span className="text-[10px] font-bold" style={{ color }}>Person {personIdx}</span>
+            <span className="text-[9px] text-slate-500">{face.matches.length} photo{face.matches.length !== 1 ? "s" : ""}</span>
+          </div>
+        ),
+      },
+      style: {
+        background: "#1a1a26",
+        border: `2px solid ${color}50`,
+        borderRadius: "50%",
+        width: FACE_W,
+        height: FACE_H,
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        boxShadow: `0 0 20px ${color}18`,
+      },
+    });
+  });
+
+  // --- Edges: photo → each face it contains ---
+  images.forEach((img) => {
+    img.faces.forEach((faceMatch) => {
       const color = faceColorMap.get(faceMatch.unique_face_id) ?? "#eab308";
-      const personIdx = (faceIndexMap.get(faceMatch.unique_face_id) ?? 0) + 1;
-
-      // Only create the face node once (first time we see it)
-      if (!nodes.find((n) => n.id === faceNodeId)) {
-        const angle = (fi / Math.max(img.faces.length, 1)) * Math.PI * 2;
-        const faceOffX = px + 130 + Math.cos(angle) * 80;
-        const faceOffY = py + Math.sin(angle) * 80;
-
-        nodes.push({
-          id: faceNodeId,
-          position: { x: faceOffX, y: faceOffY },
-          data: {
-            label: (
-              <div className="flex flex-col items-center gap-0.5">
-                <div
-                  className="w-11 h-11 rounded-full overflow-hidden"
-                  style={{ boxShadow: `0 0 0 2.5px ${color}` }}
-                >
-                  <img src={`${BASE}${faceMatch.face_image_url}`} alt="" className="w-full h-full object-cover" />
-                </div>
-                <span className="text-[9px] font-semibold" style={{ color }}>P{personIdx}</span>
-              </div>
-            ),
-          },
-          style: {
-            background: "#1a1a26",
-            border: `1.5px solid ${color}40`,
-            borderRadius: "50%",
-            width: 70,
-            height: 70,
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            boxShadow: `0 0 16px ${color}15`,
-          },
-        });
-      }
-
-      // Edge: photo → face
       edges.push({
         id: `e-${img.id}-${faceMatch.unique_face_id}`,
         source: `photo-${img.id}`,
-        target: faceNodeId,
+        target: `face-${faceMatch.unique_face_id}`,
+        sourceHandle: null,
+        targetHandle: null,
+        type: "smoothstep",
         animated: false,
-        style: { stroke: color, strokeWidth: 1.5, strokeOpacity: 0.35 },
+        style: { stroke: color, strokeWidth: 2, strokeOpacity: 0.45 },
       });
     });
   });
