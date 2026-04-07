@@ -588,13 +588,6 @@ function GraphCanvas({
     }
   }, []);
 
-  const { fitView } = useReactFlow();
-  const resetLayout = useCallback(() => {
-    setNodes(initNodes);
-    setEdges(initEdges);
-    setTimeout(() => fitView({ padding: 0.2, duration: 400 }), 50);
-  }, [initNodes, initEdges, setNodes, setEdges, fitView]);
-
   // Rebuild graph when data changes (e.g. after manual face assignment)
   const { nodes: initNodes, edges: initEdges } = useMemo(
     () => buildGraph(images, faces, faceColorMap, setPopupImageId),
@@ -607,6 +600,13 @@ function GraphCanvas({
   // Sync graph nodes/edges after refetch
   useEffect(() => { setNodes(initNodes); }, [initNodes, setNodes]);
   useEffect(() => { setEdges(initEdges); }, [initEdges, setEdges]);
+
+  const { fitView } = useReactFlow();
+  const resetLayout = useCallback(() => {
+    setNodes(initNodes);
+    setEdges(initEdges);
+    setTimeout(() => fitView({ padding: 0.2, duration: 400 }), 50);
+  }, [initNodes, initEdges, setNodes, setEdges, fitView]);
 
   // Set of photo node IDs connected to the hovered face
   const connectedPhotoIds = useMemo(() => {
