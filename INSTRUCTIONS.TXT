@@ -1,0 +1,6 @@
+This folder has a perfectly working scripts for face-recognition and sorting images with faces
+
+ - first create a folder "input" and place all images that need to be sorted.
+ - Then run file "part1.py" , this will create "UNIQUE" folder.
+ - Then run the file "part2.py" , it will sort the faces into folder with the filename of cropped-face-image's found in "UNIQUE" folder.
+ 
