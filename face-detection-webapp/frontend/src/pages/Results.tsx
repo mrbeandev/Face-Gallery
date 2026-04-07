@@ -357,9 +357,64 @@ const PHOTO_W = 130;
 const PHOTO_H = 152;
 const PHOTO_GAP_X = 44;
 const PHOTO_GAP_Y = 36;
-const FACE_D = 100;
+const FACE_D = 108;
 const FACE_GAP = 44;
 const SECTION_GAP = 220; // vertical space between photo grid bottom and face row top
+
+// Each person gets a distinct shape so nodes are immediately visually different
+type ShapeDef = { outer: React.CSSProperties; inner: React.CSSProperties };
+const FACE_NODE_SHAPES: ShapeDef[] = [
+  // 0 – Hexagon
+  {
+    outer: { clipPath: "polygon(50% 0%, 100% 25%, 100% 75%, 50% 100%, 0% 75%, 0% 25%)", borderRadius: 0 },
+    inner: { clipPath: "polygon(50% 0%, 100% 25%, 100% 75%, 50% 100%, 0% 75%, 0% 25%)" },
+  },
+  // 1 – Rounded square / squircle
+  {
+    outer: { borderRadius: "22px" },
+    inner: { borderRadius: "14px" },
+  },
+  // 2 – Shield (pointed bottom)
+  {
+    outer: { clipPath: "polygon(0% 0%, 100% 0%, 100% 65%, 50% 100%, 0% 65%)", borderRadius: 0 },
+    inner: { clipPath: "polygon(0% 0%, 100% 0%, 100% 65%, 50% 100%, 0% 65%)" },
+  },
+  // 3 – Octagon
+  {
+    outer: { clipPath: "polygon(30% 0%, 70% 0%, 100% 30%, 100% 70%, 70% 100%, 30% 100%, 0% 70%, 0% 30%)", borderRadius: 0 },
+    inner: { clipPath: "polygon(30% 0%, 70% 0%, 100% 30%, 100% 70%, 70% 100%, 30% 100%, 0% 70%, 0% 30%)" },
+  },
+  // 4 – Pentagon
+  {
+    outer: { clipPath: "polygon(50% 0%, 100% 38%, 82% 100%, 18% 100%, 0% 38%)", borderRadius: 0 },
+    inner: { clipPath: "polygon(50% 0%, 100% 38%, 82% 100%, 18% 100%, 0% 38%)" },
+  },
+  // 5 – Tag / arch top
+  {
+    outer: { borderRadius: "50% 50% 8px 8px" },
+    inner: { borderRadius: "50% 50% 4px 4px" },
+  },
+  // 6 – Diamond
+  {
+    outer: { clipPath: "polygon(50% 0%, 100% 45%, 50% 100%, 0% 45%)", borderRadius: 0 },
+    inner: { clipPath: "polygon(50% 0%, 100% 45%, 50% 100%, 0% 45%)" },
+  },
+  // 7 – Rounded pill / stadium
+  {
+    outer: { borderRadius: "999px" },
+    inner: { borderRadius: "999px" },
+  },
+  // 8 – Tilted square (diamond-ish via rotation handled with clip)
+  {
+    outer: { clipPath: "polygon(50% 5%, 95% 50%, 50% 95%, 5% 50%)", borderRadius: 0 },
+    inner: { clipPath: "polygon(50% 5%, 95% 50%, 50% 95%, 5% 50%)" },
+  },
+  // 9 – Notched corners (badge)
+  {
+    outer: { clipPath: "polygon(12% 0%, 88% 0%, 100% 12%, 100% 88%, 88% 100%, 12% 100%, 0% 88%, 0% 12%)", borderRadius: 0 },
+    inner: { clipPath: "polygon(12% 0%, 88% 0%, 100% 12%, 100% 88%, 88% 100%, 12% 100%, 0% 88%, 0% 12%)" },
+  },
+];
 
 function buildGraph(
   images: ImageNode[],
@@ -453,6 +508,7 @@ function buildGraph(
   faces.forEach((face, i) => {
     const color = faceColorMap.get(face.id) ?? PERSON_COLORS[i % PERSON_COLORS.length];
     const x = faceRowStartX + i * (FACE_D + FACE_GAP);
+    const shape = FACE_NODE_SHAPES[i % FACE_NODE_SHAPES.length];
 
     nodes.push({
       id: `face-${face.id}`,
@@ -463,8 +519,13 @@ function buildGraph(
         label: (
           <div className="flex flex-col items-center gap-0.5 select-none">
             <div
-              className="w-[62px] h-[62px] rounded-full overflow-hidden"
-              style={{ boxShadow: `0 0 0 3px ${color}, 0 0 16px ${color}50` }}
+              className="overflow-hidden shrink-0"
+              style={{
+                width: 66,
+                height: 66,
+                boxShadow: `0 0 0 2.5px ${color}, 0 0 18px ${color}60`,
+                ...shape.inner,
+              }}
             >
               <img
                 src={`${BASE}${face.face_image_url}`}
@@ -472,7 +533,7 @@ function buildGraph(
                 className="w-full h-full object-cover"
               />
             </div>
-            <span className="text-[10px] font-bold mt-1" style={{ color }}>
+            <span className="text-[10px] font-bold mt-1.5" style={{ color }}>
               Person {i + 1}
             </span>
             <span className="text-[9px] text-slate-500">
@@ -482,15 +543,15 @@ function buildGraph(
         ),
       },
       style: {
-        background: `radial-gradient(circle at 40% 38%, ${color}10, #0a0a14)`,
-        border: `2px solid ${color}50`,
-        borderRadius: "50%",
+        background: `radial-gradient(circle at 40% 38%, ${color}12, #08080f)`,
+        border: `2px solid ${color}45`,
         width: FACE_D,
         height: FACE_D,
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
-        boxShadow: `0 0 0 8px ${color}08, 0 0 40px ${color}20`,
+        boxShadow: `0 0 0 6px ${color}0a, 0 0 36px ${color}22`,
+        ...shape.outer,
       },
     });
   });
