@@ -323,8 +323,9 @@ function buildGraph(
     const x = gridStartX + col * (PHOTO_W + PHOTO_GAP_X);
     const y = gridStartY + row * (PHOTO_H + PHOTO_GAP_Y);
 
+    const hasFaceMatches = img.faces.length > 0;
     // Top border color: dominant person's color (most faces → first match)
-    const topColor = img.faces.length > 0
+    const topColor = hasFaceMatches
       ? faceColorMap.get(img.faces[0].unique_face_id) ?? "transparent"
       : "transparent";
 
@@ -360,9 +361,13 @@ function buildGraph(
         ),
       },
       style: {
-        background: "linear-gradient(160deg, #161622 0%, #0e0e1c 100%)",
-        border: `1.5px solid ${topColor !== "transparent" ? topColor + "55" : "rgba(255,255,255,0.07)"}`,
-        borderTop: `3px solid ${topColor}`,
+        background: hasFaceMatches
+          ? "linear-gradient(160deg, #161622 0%, #0e0e1c 100%)"
+          : "linear-gradient(160deg, #111118 0%, #0a0a10 100%)",
+        border: hasFaceMatches
+          ? `1.5px solid ${topColor + "55"}`
+          : "1.5px dashed rgba(255,255,255,0.1)",
+        borderTop: hasFaceMatches ? `3px solid ${topColor}` : "1.5px dashed rgba(255,255,255,0.1)",
         borderRadius: "16px",
         width: PHOTO_W,
         height: PHOTO_H,
@@ -370,9 +375,10 @@ function buildGraph(
         alignItems: "center",
         justifyContent: "center",
         cursor: "default",
-        boxShadow: topColor !== "transparent"
+        opacity: hasFaceMatches ? 1 : 0.55,
+        boxShadow: hasFaceMatches
           ? `0 0 20px ${topColor}18, 0 6px 24px rgba(0,0,0,0.5)`
-          : "0 6px 24px rgba(0,0,0,0.5)",
+          : "0 4px 16px rgba(0,0,0,0.4)",
         padding: "10px 8px 8px",
       },
     });
@@ -436,13 +442,13 @@ function buildGraph(
         id: `e-${img.id}-${fm.unique_face_id}`,
         source: `photo-${img.id}`,
         target: `face-${fm.unique_face_id}`,
-        type: "smoothstep",
+        // "default" = bezier in React Flow → smooth S-curves
         animated: true,
         style: {
           stroke: color,
-          strokeWidth: 2,
-          strokeOpacity: 0.6,
-          filter: `drop-shadow(0 0 3px ${color}70)`,
+          strokeWidth: 2.2,
+          strokeOpacity: 0.65,
+          filter: `drop-shadow(0 0 4px ${color}80)`,
         },
       });
     });
@@ -598,7 +604,7 @@ export default function ResultsPage() {
                   <div className="w-px h-4 bg-white/10" />
                   <div className="flex items-center gap-1.5 text-sm text-slate-400">
                     <ImageIcon className="w-4 h-4 text-purple-400" />
-                    <span>{images.length} photos · {totalPhotos} matches</span>
+                    <span>{images.length} photos · {totalPhotos} face matches</span>
                   </div>
                 </div>
               )}
