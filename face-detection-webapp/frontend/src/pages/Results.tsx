@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef, useEffect } from "react";
+import { useState, useCallback, useRef, useEffect, useMemo } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { motion, AnimatePresence } from "framer-motion";
@@ -465,15 +465,122 @@ function GraphCanvas({
   faceColorMap: Map<string, string>;
 }) {
   const [popup, setPopup] = useState<ImageNode | null>(null);
-  const { nodes: initNodes, edges: initEdges } = buildGraph(images, faces, faceColorMap, setPopup);
-  const [nodes, , onNodesChange] = useNodesState(initNodes);
-  const [edges, , onEdgesChange] = useEdgesState(initEdges);
+  const [hoveredFaceId, setHoveredFaceId] = useState<string | null>(null);
+
+  // Build graph once — stable positions
+  const { nodes: initNodes, edges: initEdges } = useMemo(
+    () => buildGraph(images, faces, faceColorMap, setPopup),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [images.length, faces.length]
+  );
+  const [nodes, setNodes, onNodesChange] = useNodesState(initNodes);
+  const [edges, setEdges, onEdgesChange] = useEdgesState(initEdges);
+
+  // Set of photo node IDs connected to the hovered face
+  const connectedPhotoIds = useMemo(() => {
+    if (!hoveredFaceId) return null;
+    return new Set(
+      images
+        .filter((img) => img.faces.some((f) => f.unique_face_id === hoveredFaceId))
+        .map((img) => `photo-${img.id}`)
+    );
+  }, [hoveredFaceId, images]);
+
+  // Apply highlight / dim on hover
+  useEffect(() => {
+    const hColor = hoveredFaceId ? (faceColorMap.get(hoveredFaceId) ?? "#eab308") : null;
+
+    setEdges((eds) =>
+      eds.map((e) => {
+        // Derive the face ID this edge points to
+        const edgeFaceId = e.target.startsWith("face-") ? e.target.slice(5) : null;
+        const origColor = edgeFaceId ? (faceColorMap.get(edgeFaceId) ?? "#eab308") : "#eab308";
+
+        if (!hoveredFaceId) {
+          return {
+            ...e,
+            animated: true,
+            style: {
+              stroke: origColor,
+              strokeWidth: 2.2,
+              strokeOpacity: 0.65,
+              filter: `drop-shadow(0 0 4px ${origColor}80)`,
+              transition: "all 0.25s ease",
+            },
+          };
+        }
+
+        const isHighlighted = e.target === `face-${hoveredFaceId}`;
+        return {
+          ...e,
+          animated: isHighlighted,
+          style: isHighlighted
+            ? {
+                stroke: hColor!,
+                strokeWidth: 3.5,
+                strokeOpacity: 1,
+                filter: `drop-shadow(0 0 8px ${hColor}) drop-shadow(0 0 3px ${hColor})`,
+                transition: "all 0.2s ease",
+              }
+            : {
+                stroke: "#1e1e2e",
+                strokeWidth: 1,
+                strokeOpacity: 0.2,
+                filter: "none",
+                transition: "all 0.2s ease",
+              },
+        };
+      })
+    );
+
+    setNodes((nds) =>
+      nds.map((n) => {
+        const isFaceNode = n.id.startsWith("face-");
+        const isPhotoNode = n.id.startsWith("photo-");
+        const isSelf = n.id === `face-${hoveredFaceId}`;
+        const isConnectedPhoto = connectedPhotoIds?.has(n.id) ?? false;
+
+        if (!hoveredFaceId) {
+          // Reset — strip only hover overrides, keep base style
+          const { filter: _f, ...restStyle } = n.style as Record<string, unknown>;
+          return {
+            ...n,
+            style: { ...restStyle, opacity: 1, transition: "all 0.25s ease" },
+          };
+        }
+
+        const isVisible = isSelf || isConnectedPhoto || (!isFaceNode && !isPhotoNode);
+        const opacity = isVisible ? 1 : 0.12;
+
+        return {
+          ...n,
+          style: {
+            ...n.style,
+            opacity,
+            transition: "all 0.2s ease",
+            ...(isSelf
+              ? { filter: `drop-shadow(0 0 18px ${hColor}) brightness(1.15)` }
+              : { filter: "none" }),
+          },
+        };
+      })
+    );
+  }, [hoveredFaceId, connectedPhotoIds, faceColorMap, setEdges, setNodes]);
+
+  const handleNodeMouseEnter = useCallback((_: React.MouseEvent, node: Node) => {
+    if (node.id.startsWith("face-")) setHoveredFaceId(node.id.slice(5));
+  }, []);
+
+  const handleNodeMouseLeave = useCallback((_: React.MouseEvent, node: Node) => {
+    if (node.id.startsWith("face-")) setHoveredFaceId(null);
+  }, []);
 
   return (
     <>
       <style>{`
         .react-flow__node { overflow: visible !important; }
         .react-flow__handle { opacity: 0 !important; width: 1px !important; height: 1px !important; }
+        .react-flow__node:hover { z-index: 10 !important; }
       `}</style>
 
       <div className="relative w-full h-[calc(100vh-220px)] rounded-2xl overflow-hidden border border-white/5">
@@ -482,6 +589,8 @@ function GraphCanvas({
           edges={edges}
           onNodesChange={onNodesChange}
           onEdgesChange={onEdgesChange}
+          onNodeMouseEnter={handleNodeMouseEnter}
+          onNodeMouseLeave={handleNodeMouseLeave}
           fitView
           fitViewOptions={{ padding: 0.2 }}
           minZoom={0.1}
