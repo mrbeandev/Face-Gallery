@@ -13,7 +13,7 @@ from sqlalchemy.orm import Session
 
 from database import SessionLocal, Job, Image as DBImage, UniqueFace, FaceMatch, Notification, new_id, get_db
 import json
-from schemas import JobOut, JobSummary, UploadResponse, ResultsOut, UniqueFaceOut, FaceMatchOut, ImageOut, ImageFaceMatchOut
+from schemas import JobOut, JobSummary, UploadResponse, ResultsOut, UniqueFaceOut, FaceMatchOut, ImageOut, ImageFaceMatchOut, GroupMemberOut
 from processing import FaceProcessor
 
 router = APIRouter()
@@ -280,12 +280,10 @@ def merge_faces(
     use_face_image_from: str | None = Body(None),
     db: Session = Depends(get_db),
 ):
-    """Merge one or more source faces into a target face.
+    """Group faces together (reversible merge).
 
-    All image matches from the sources are moved to target (skipping
-    duplicates), then the source face records are deleted.
-    If use_face_image_from is provided, the target's thumbnail is
-    swapped to that face's image.
+    The target becomes the group primary. Sources become members.
+    No data is deleted — members keep their own matches and can be ungrouped later.
     """
     target = db.get(UniqueFace, target_id)
     if not target or target.job_id != job_id:
@@ -303,29 +301,98 @@ def merge_faces(
     if not sources:
         raise HTTPException(status_code=400, detail="No valid source faces to merge")
 
-    # Optionally swap the target thumbnail to a chosen face's image
+    # Optionally swap the target thumbnail
     if use_face_image_from and use_face_image_from != target_id:
         donor = db.get(UniqueFace, use_face_image_from)
         if donor and donor.job_id == job_id:
             target.face_image_path = donor.face_image_path
 
-    # Move matches from each source → target
-    existing_image_ids = {
-        m.image_id
-        for m in db.query(FaceMatch).filter_by(unique_face_id=target_id).all()
-    }
+    # Set group_id on target (primary) and all sources (members)
+    target.group_id = target_id
     for src in sources:
-        src_matches = db.query(FaceMatch).filter_by(unique_face_id=src.id).all()
-        for m in src_matches:
-            if m.image_id in existing_image_ids:
-                db.delete(m)
-            else:
-                m.unique_face_id = target_id
-                existing_image_ids.add(m.image_id)
-        db.delete(src)
+        # If source was itself a group primary, absorb its members too
+        if src.group_id == src.id:
+            for member in db.query(UniqueFace).filter(
+                UniqueFace.group_id == src.id, UniqueFace.id != src.id
+            ).all():
+                member.group_id = target_id
+        src.group_id = target_id
 
     db.commit()
-    return {"status": "merged", "target_id": target_id, "removed_ids": [s.id for s in sources]}
+    return {"status": "grouped", "group_id": target_id}
+
+
+# ------------------------------------------------------------------ #
+# POST /api/jobs/{job_id}/faces/{face_id}/ungroup                     #
+# ------------------------------------------------------------------ #
+
+@router.post("/jobs/{job_id}/faces/{face_id}/ungroup")
+def ungroup_face(
+    job_id: str,
+    face_id: str,
+    db: Session = Depends(get_db),
+):
+    """Remove a face from its group, making it standalone again."""
+    face = db.get(UniqueFace, face_id)
+    if not face or face.job_id != job_id:
+        raise HTTPException(status_code=404, detail="Face not found")
+    if not face.group_id:
+        return {"status": "already_standalone"}
+
+    old_group_id = face.group_id
+    is_primary = face.group_id == face.id
+
+    face.group_id = None
+
+    if is_primary:
+        # Promote the next member to primary, or dissolve the group
+        remaining = db.query(UniqueFace).filter(
+            UniqueFace.group_id == old_group_id, UniqueFace.id != face_id
+        ).all()
+        if len(remaining) == 1:
+            # Only one left — dissolve
+            remaining[0].group_id = None
+        elif len(remaining) > 1:
+            # Promote first remaining member
+            new_primary = remaining[0]
+            new_primary.group_id = new_primary.id
+            for m in remaining[1:]:
+                m.group_id = new_primary.id
+
+    db.commit()
+    return {"status": "ungrouped"}
+
+
+# ------------------------------------------------------------------ #
+# POST /api/jobs/{job_id}/faces/group/{group_id}/set-primary          #
+# ------------------------------------------------------------------ #
+
+@router.post("/jobs/{job_id}/faces/group/{group_id}/set-primary")
+def set_group_primary(
+    job_id: str,
+    group_id: str,
+    face_id: str = Body(..., embed=True),
+    db: Session = Depends(get_db),
+):
+    """Change which face is the display face (primary) of a group."""
+    new_primary = db.get(UniqueFace, face_id)
+    if not new_primary or new_primary.job_id != job_id:
+        raise HTTPException(status_code=404, detail="Face not found")
+    if new_primary.group_id != group_id:
+        raise HTTPException(status_code=400, detail="Face is not in this group")
+
+    old_primary = db.get(UniqueFace, group_id)
+    if not old_primary:
+        raise HTTPException(status_code=404, detail="Group not found")
+
+    # Swap: old primary becomes member, new primary becomes leader
+    # Update all members to point to new primary
+    members = db.query(UniqueFace).filter(UniqueFace.group_id == group_id).all()
+    for m in members:
+        m.group_id = face_id
+
+    db.commit()
+    return {"status": "primary_changed", "new_primary_id": face_id}
 
 
 # ------------------------------------------------------------------ #
@@ -524,37 +591,79 @@ def get_results(job_id: str, db: Annotated[Session, Depends(get_db)]):
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
 
-    unique_faces_db = db.query(UniqueFace).filter(UniqueFace.job_id == job_id).all()
-    uf_map = {uf.id: uf for uf in unique_faces_db}
+    all_faces_db = db.query(UniqueFace).filter(UniqueFace.job_id == job_id).all()
+    uf_map = {uf.id: uf for uf in all_faces_db}
+
+    # Build group membership: primary_id → [member faces]
+    group_members_map: dict[str, list[UniqueFace]] = {}
+    for uf in all_faces_db:
+        if uf.group_id and uf.group_id != uf.id:
+            group_members_map.setdefault(uf.group_id, []).append(uf)
+
+    # Map member face IDs to their group primary ID (for graph view edge remapping)
+    member_to_primary: dict[str, str] = {}
+    for primary_id, members in group_members_map.items():
+        for m in members:
+            member_to_primary[m.id] = primary_id
 
     # --- List view: face → [images] ---
+    # Only show standalone faces and group primaries (not group members)
     result_faces = []
-    for uf in unique_faces_db:
+    for uf in all_faces_db:
+        # Skip group members — their matches are aggregated under the primary
+        if uf.group_id and uf.group_id != uf.id:
+            continue
+
+        # Collect face IDs whose matches should be aggregated under this face
+        face_ids = [uf.id]
+        members = group_members_map.get(uf.id, [])
+        face_ids.extend(m.id for m in members)
+
+        # Query all matches for this face + its group members
         matches_db = (
             db.query(FaceMatch, DBImage)
             .join(DBImage, FaceMatch.image_id == DBImage.id)
-            .filter(FaceMatch.unique_face_id == uf.id)
+            .filter(FaceMatch.unique_face_id.in_(face_ids))
             .all()
         )
-        matches_out = [
-            FaceMatchOut(
+        # Deduplicate by image_id
+        seen_image_ids: set[str] = set()
+        matches_out = []
+        for _, img in matches_db:
+            if img.id in seen_image_ids:
+                continue
+            seen_image_ids.add(img.id)
+            matches_out.append(FaceMatchOut(
                 image_id=img.id,
                 filename=img.filename,
                 image_url=f"/static/uploads/{job_id}/{img.filename}",
+            ))
+
+        # Build group member info
+        members_out = [
+            GroupMemberOut(
+                id=m.id,
+                face_image_url=f"/static/results/{m.face_image_path}",
+                name=m.name,
+                match_count=db.query(FaceMatch).filter(FaceMatch.unique_face_id == m.id).count(),
             )
-            for _, img in matches_db
+            for m in members
         ]
+
         result_faces.append(
             UniqueFaceOut(
                 id=uf.id,
                 face_image_url=f"/static/results/{uf.face_image_path}",
                 name=uf.name,
                 disabled=bool(uf.disabled),
+                group_id=uf.group_id,
+                group_members=members_out,
                 matches=matches_out,
             )
         )
 
     # --- Graph view: image → [faces with boxes] ---
+    # Remap member face IDs to their group primary so edges connect to the primary node
     all_images_db = db.query(DBImage).filter(DBImage.job_id == job_id).all()
     images_out = []
     for img in all_images_db:
@@ -564,8 +673,14 @@ def get_results(job_id: str, db: Annotated[Session, Depends(get_db)]):
             .all()
         )
         face_matches_out = []
+        seen_face_ids: set[str] = set()
         for m in matches_db:
-            uf = uf_map.get(m.unique_face_id)
+            # Remap member → primary
+            effective_id = member_to_primary.get(m.unique_face_id, m.unique_face_id)
+            if effective_id in seen_face_ids:
+                continue
+            seen_face_ids.add(effective_id)
+            uf = uf_map.get(effective_id)
             if not uf:
                 continue
             box = None
@@ -575,7 +690,7 @@ def get_results(job_id: str, db: Annotated[Session, Depends(get_db)]):
                 except Exception:
                     pass
             face_matches_out.append(ImageFaceMatchOut(
-                unique_face_id=uf.id,
+                unique_face_id=effective_id,
                 face_image_url=f"/static/results/{uf.face_image_path}",
                 face_box=box,
             ))

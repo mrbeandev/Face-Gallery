@@ -45,11 +45,20 @@ export interface FaceMatch {
   image_url: string;
 }
 
+export interface GroupMember {
+  id: string;
+  face_image_url: string;
+  name: string | null;
+  match_count: number;
+}
+
 export interface UniqueFace {
   id: string;
   face_image_url: string;
   name: string | null;
   disabled: boolean;
+  group_id: string | null;
+  group_members: GroupMember[];
   matches: FaceMatch[];
 }
 
@@ -94,6 +103,10 @@ export const jobsApi = {
     api.patch(`/api/jobs/${jobId}/faces/${faceId}`, { name }),
   mergeFaces: (jobId: string, targetId: string, sourceIds: string[], useFaceImageFrom?: string) =>
     api.post(`/api/jobs/${jobId}/faces/merge`, { target_id: targetId, source_ids: sourceIds, use_face_image_from: useFaceImageFrom ?? null }),
+  ungroupFace: (jobId: string, faceId: string) =>
+    api.post(`/api/jobs/${jobId}/faces/${faceId}/ungroup`),
+  setGroupPrimary: (jobId: string, groupId: string, faceId: string) =>
+    api.post(`/api/jobs/${jobId}/faces/group/${groupId}/set-primary`, { face_id: faceId }),
   toggleDisableFace: (jobId: string, faceId: string) =>
     api.post(`/api/jobs/${jobId}/faces/${faceId}/disable`),
   deleteFace: (jobId: string, faceId: string) =>

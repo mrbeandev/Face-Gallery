@@ -69,6 +69,7 @@ class UniqueFace(Base):
     encoding = Column(LargeBinary, nullable=False)      # pickled numpy array
     name = Column(String, nullable=True)                # user-assigned tag/name
     disabled = Column(Integer, default=0)               # 1 = hidden from results
+    group_id = Column(String, nullable=True)             # NULL=standalone, own id=primary, other id=member
 
     job = relationship("Job", back_populates="unique_faces")
     matches = relationship("FaceMatch", back_populates="unique_face", cascade="all, delete-orphan")
@@ -115,6 +116,7 @@ with engine.connect() as conn:
         "ALTER TABLE face_matches ADD COLUMN face_box TEXT",
         "ALTER TABLE unique_faces ADD COLUMN name TEXT",
         "ALTER TABLE unique_faces ADD COLUMN disabled INTEGER DEFAULT 0",
+        "ALTER TABLE unique_faces ADD COLUMN group_id TEXT",
     ]:
         try:
             conn.execute(text(stmt))

@@ -56,11 +56,20 @@ class FaceMatchOut(BaseModel):
         from_attributes = True
 
 
+class GroupMemberOut(BaseModel):
+    id: str
+    face_image_url: str
+    name: str | None = None
+    match_count: int = 0
+
+
 class UniqueFaceOut(BaseModel):
     id: str
     face_image_url: str
     name: str | None = None
     disabled: bool = False
+    group_id: str | None = None
+    group_members: list[GroupMemberOut] = []
     matches: list[FaceMatchOut] = []
 
     class Config:
