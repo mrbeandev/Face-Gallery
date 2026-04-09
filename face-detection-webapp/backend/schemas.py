@@ -59,6 +59,8 @@ class FaceMatchOut(BaseModel):
 class UniqueFaceOut(BaseModel):
     id: str
     face_image_url: str
+    name: str | None = None
+    disabled: bool = False
     matches: list[FaceMatchOut] = []
 
     class Config:

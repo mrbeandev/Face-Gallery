@@ -26,6 +26,7 @@ from database import SessionLocal, Job, Image as DBImage, UniqueFace, FaceMatch,
 
 
 TOLERANCE = 0.5
+FACE_CROP_PADDING = 0.45   # 45% padding around the detected face bounding box
 
 
 class FaceProcessor:
@@ -181,7 +182,16 @@ class FaceProcessor:
                         face_path = os.path.join(self.unique_dir, face_filename)
 
                         top, right, bottom, left = face_location
-                        face_img = image[top:bottom, left:right]
+                        face_h = bottom - top
+                        face_w = right - left
+                        pad_h = int(face_h * FACE_CROP_PADDING)
+                        pad_w = int(face_w * FACE_CROP_PADDING)
+                        img_h, img_w = image.shape[:2]
+                        crop_top = max(0, top - pad_h)
+                        crop_bottom = min(img_h, bottom + pad_h)
+                        crop_left = max(0, left - pad_w)
+                        crop_right = min(img_w, right + pad_w)
+                        face_img = image[crop_top:crop_bottom, crop_left:crop_right]
                         cv2.imwrite(face_path, cv2.cvtColor(face_img, cv2.COLOR_RGB2BGR))
 
                         uf = UniqueFace(

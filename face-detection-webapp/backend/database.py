@@ -67,6 +67,8 @@ class UniqueFace(Base):
     job_id = Column(String, ForeignKey("jobs.id"), nullable=False)
     face_image_path = Column(String, nullable=False)   # relative to results dir
     encoding = Column(LargeBinary, nullable=False)      # pickled numpy array
+    name = Column(String, nullable=True)                # user-assigned tag/name
+    disabled = Column(Integer, default=0)               # 1 = hidden from results
 
     job = relationship("Job", back_populates="unique_faces")
     matches = relationship("FaceMatch", back_populates="unique_face", cascade="all, delete-orphan")
@@ -106,11 +108,16 @@ class Notification(Base):
 
 Base.metadata.create_all(bind=engine)
 
-# Migrate: add face_box column if it doesn't exist yet (SQLite doesn't support
-# ADD COLUMN IF NOT EXISTS, so we catch the error)
+# Migrate: add columns if they don't exist yet (SQLite doesn't support
+# ADD COLUMN IF NOT EXISTS, so we catch errors)
 with engine.connect() as conn:
-    try:
-        conn.execute(text("ALTER TABLE face_matches ADD COLUMN face_box TEXT"))
-        conn.commit()
-    except Exception:
-        pass  # column already exists
+    for stmt in [
+        "ALTER TABLE face_matches ADD COLUMN face_box TEXT",
+        "ALTER TABLE unique_faces ADD COLUMN name TEXT",
+        "ALTER TABLE unique_faces ADD COLUMN disabled INTEGER DEFAULT 0",
+    ]:
+        try:
+            conn.execute(text(stmt))
+            conn.commit()
+        except Exception:
+            pass  # column already exists

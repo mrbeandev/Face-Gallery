@@ -1,6 +1,7 @@
 import { useEffect, useRef } from "react";
 import type { WSEvent } from "../types";
 import { useJobStore } from "../store/jobStore";
+import { useSettingsStore } from "../store/settingsStore";
 
 export function useJobWS(jobId: string | null) {
   const handleWSEvent = useJobStore((s) => s.handleWSEvent);
@@ -10,7 +11,8 @@ export function useJobWS(jobId: string | null) {
     if (!jobId) return;
 
     const connect = () => {
-      const ws = new WebSocket(`ws://localhost:8000/ws/${jobId}`);
+      const wsBase = useSettingsStore.getState().wsBase();
+      const ws = new WebSocket(`${wsBase}/ws/${jobId}`);
       wsRef.current = ws;
 
       ws.onmessage = (e) => {

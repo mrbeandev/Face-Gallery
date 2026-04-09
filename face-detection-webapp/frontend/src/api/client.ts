@@ -1,7 +1,12 @@
 import axios from "axios";
+import { useSettingsStore } from "../store/settingsStore";
 
-export const api = axios.create({
-  baseURL: "http://localhost:8000",
+export const api = axios.create();
+
+// Intercept every request to inject the current backend URL
+api.interceptors.request.use((config) => {
+  config.baseURL = useSettingsStore.getState().httpBase();
+  return config;
 });
 
 export interface JobSummary {
@@ -43,6 +48,8 @@ export interface FaceMatch {
 export interface UniqueFace {
   id: string;
   face_image_url: string;
+  name: string | null;
+  disabled: boolean;
   matches: FaceMatch[];
 }
 
@@ -77,9 +84,26 @@ export const jobsApi = {
   start: (jobId: string) => api.post(`/api/jobs/${jobId}/start`),
   pause: (jobId: string) => api.post(`/api/jobs/${jobId}/pause`),
   stop: (jobId: string) => api.post(`/api/jobs/${jobId}/stop`),
+  deleteJob: (jobId: string) => api.delete(`/api/jobs/${jobId}`),
   results: (jobId: string) => api.get<ResultsData>(`/api/jobs/${jobId}/results`),
   addMatch: (jobId: string, imageId: string, faceId: string) =>
     api.post(`/api/jobs/${jobId}/images/${imageId}/faces/${faceId}`),
   removeMatch: (jobId: string, imageId: string, faceId: string) =>
     api.delete(`/api/jobs/${jobId}/images/${imageId}/faces/${faceId}`),
+  renameFace: (jobId: string, faceId: string, name: string) =>
+    api.patch(`/api/jobs/${jobId}/faces/${faceId}`, { name }),
+  mergeFaces: (jobId: string, targetId: string, sourceIds: string[], useFaceImageFrom?: string) =>
+    api.post(`/api/jobs/${jobId}/faces/merge`, { target_id: targetId, source_ids: sourceIds, use_face_image_from: useFaceImageFrom ?? null }),
+  toggleDisableFace: (jobId: string, faceId: string) =>
+    api.post(`/api/jobs/${jobId}/faces/${faceId}/disable`),
+  deleteFace: (jobId: string, faceId: string) =>
+    api.delete(`/api/jobs/${jobId}/faces/${faceId}`),
+  addImages: (jobId: string, files: File[]) => {
+    const form = new FormData();
+    files.forEach((f) => form.append("files", f));
+    return api.post<UploadResponse>(`/api/jobs/${jobId}/add-images`, form);
+  },
+  getSettings: () => api.get<{ tolerance: number; face_crop_padding: number }>("/api/settings"),
+  updateSettings: (params: { tolerance?: number; face_crop_padding?: number }) =>
+    api.put("/api/settings", null, { params }),
 };

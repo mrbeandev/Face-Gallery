@@ -15,6 +15,7 @@ __pycache__/
 # Uploaded & processed files
 face-detection-webapp/backend/uploads/
 face-detection-webapp/backend/results/
+face-detection-webapp/backend/thumbs/
 input/
 UNIQUE/
 sorted_by_face/
