@@ -3,12 +3,13 @@ import { useParams, useNavigate } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   ScanFace, SortAsc, AlertTriangle, CheckCircle2, Loader2, XCircle,
-  ChevronDown, ChevronUp, X,
+  ChevronDown, ChevronUp, X, Zap,
 } from "lucide-react";
 import { useJobWS } from "../hooks/useJobWS";
 import { useJobStore } from "../store/jobStore";
 import { useSettingsStore } from "../store/settingsStore";
 import { jobsApi } from "../api/client";
+import EffectsDialog from "../components/EffectsDialog";
 
 function ProgressBar({ value, max, color }: { value: number; max: number; color: string }) {
   const pct = max > 0 ? Math.min(100, Math.round((value / max) * 100)) : 0;
@@ -35,12 +36,24 @@ export default function ProcessingPage() {
   const [notifOpen, setNotifOpen] = useState(false);
   const [countdown, setCountdown] = useState<number | null>(null);
   const [cancelling, setCancelling] = useState(false);
+  const [showPerfWarning, setShowPerfWarning] = useState(false);
+  const [showEffectsDialog, setShowEffectsDialog] = useState(false);
   const countdownRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const effects = useSettingsStore((s) => s.effects);
 
   const notifications = wsEvents.filter((e) => e.type === "notification");
 
+  // Check if heavy effects are on
+  const hasHeavyEffects = effects.edgeAnimations || effects.edgeGlow;
+
   useEffect(() => {
     if (status === "completed" && countdown === null) {
+      // If 30+ images and heavy effects are on, show recommendation first
+      const totalImgs = step1Progress.total || step2Progress.total;
+      if (totalImgs >= 30 && hasHeavyEffects) {
+        setShowPerfWarning(true);
+        return; // don't start countdown yet
+      }
       setCountdown(3);
       countdownRef.current = setInterval(() => {
         setCountdown((c) => {
@@ -56,7 +69,7 @@ export default function ProcessingPage() {
     return () => {
       if (countdownRef.current) clearInterval(countdownRef.current);
     };
-  }, [status, jobId, navigate]);
+  }, [status, jobId, navigate, hasHeavyEffects]);
 
   useEffect(() => {
     if (!jobId) return;
@@ -111,6 +124,48 @@ export default function ProcessingPage() {
                 Back to home
               </button>
             </motion.div>
+          )}
+        </AnimatePresence>
+
+        {/* Performance recommendation */}
+        <AnimatePresence>
+          {showPerfWarning && (
+            <motion.div key="perf" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}
+              className="rounded-xl bg-amber-500/10 border border-amber-500/20 p-4 space-y-3">
+              <div className="flex items-start gap-3">
+                <Zap className="w-5 h-5 text-amber-400 shrink-0 mt-0.5" />
+                <div>
+                  <p className="text-sm font-semibold text-amber-300">Large dataset detected</p>
+                  <p className="text-xs text-amber-400/70 mt-1">
+                    With {step1Progress.total || step2Progress.total}+ photos, edge animations and glow effects
+                    can cause browser lag. We recommend disabling them for a smoother experience.
+                  </p>
+                </div>
+              </div>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => setShowEffectsDialog(true)}
+                  className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-semibold bg-amber-500 text-black hover:bg-amber-400 transition-all">
+                  <Zap className="w-3.5 h-3.5" />
+                  Configure Effects
+                </button>
+                <button
+                  onClick={() => { setShowPerfWarning(false); navigate(`/results/${jobId}`); }}
+                  className="px-3 py-2 rounded-lg text-xs font-medium border border-white/10 text-slate-400 hover:text-white hover:bg-white/5 transition-all">
+                  Skip, view results
+                </button>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        <AnimatePresence>
+          {showEffectsDialog && (
+            <EffectsDialog onClose={() => {
+              setShowEffectsDialog(false);
+              setShowPerfWarning(false);
+              navigate(`/results/${jobId}`);
+            }} />
           )}
         </AnimatePresence>
 

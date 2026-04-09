@@ -1,28 +1,55 @@
 import { create } from "zustand";
 
 const URL_KEY = "facegallery_backend_url";
-const PERF_KEY = "facegallery_performance_mode";
+const FX_KEY = "facegallery_effects";
 
 function loadUrl(): string | null {
   try { return localStorage.getItem(URL_KEY); } catch { return null; }
 }
 
-function loadPerf(): boolean {
-  try { return localStorage.getItem(PERF_KEY) === "1"; } catch { return false; }
+export interface EffectsConfig {
+  edgeAnimations: boolean;   // moving dots on connection lines
+  edgeGlow: boolean;         // drop-shadow glow on edges
+  nodeShadows: boolean;      // box-shadow on photo/face cards
+  hoverEffects: boolean;     // dim/highlight on face hover
+  minimap: boolean;          // minimap overlay
+  transitions: boolean;      // CSS transitions on opacity etc.
+}
+
+const DEFAULT_EFFECTS: EffectsConfig = {
+  edgeAnimations: true,
+  edgeGlow: true,
+  nodeShadows: true,
+  hoverEffects: true,
+  minimap: true,
+  transitions: true,
+};
+
+function loadEffects(): EffectsConfig {
+  try {
+    const raw = localStorage.getItem(FX_KEY);
+    if (raw) return { ...DEFAULT_EFFECTS, ...JSON.parse(raw) };
+  } catch {}
+  return { ...DEFAULT_EFFECTS };
+}
+
+function saveEffects(fx: EffectsConfig) {
+  localStorage.setItem(FX_KEY, JSON.stringify(fx));
 }
 
 interface SettingsState {
   backendUrl: string | null;
-  performanceMode: boolean;
+  effects: EffectsConfig;
   setBackendUrl: (url: string) => void;
-  setPerformanceMode: (on: boolean) => void;
+  setEffect: (key: keyof EffectsConfig, on: boolean) => void;
+  setAllEffects: (on: boolean) => void;
   httpBase: () => string;
   wsBase: () => string;
 }
 
 export const useSettingsStore = create<SettingsState>((set, get) => ({
   backendUrl: loadUrl(),
-  performanceMode: loadPerf(),
+  effects: loadEffects(),
 
   setBackendUrl: (url: string) => {
     const clean = url.replace(/\/+$/, "");
@@ -30,16 +57,22 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
     set({ backendUrl: clean });
   },
 
-  setPerformanceMode: (on: boolean) => {
-    localStorage.setItem(PERF_KEY, on ? "1" : "0");
-    set({ performanceMode: on });
+  setEffect: (key, on) => {
+    const next = { ...get().effects, [key]: on };
+    saveEffects(next);
+    set({ effects: next });
   },
 
-  httpBase: () => {
-    const url = get().backendUrl;
-    return url ?? "http://localhost:8000";
+  setAllEffects: (on) => {
+    const next: EffectsConfig = {
+      edgeAnimations: on, edgeGlow: on, nodeShadows: on,
+      hoverEffects: on, minimap: on, transitions: on,
+    };
+    saveEffects(next);
+    set({ effects: next });
   },
 
+  httpBase: () => get().backendUrl ?? "http://localhost:8000",
   wsBase: () => {
     const url = get().backendUrl;
     if (!url) return "ws://localhost:8000";

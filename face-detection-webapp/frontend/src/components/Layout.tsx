@@ -10,6 +10,7 @@ import {
 import { useSettingsStore } from "../store/settingsStore";
 import { jobsApi, type JobSummary } from "../api/client";
 import BackendSetup from "./BackendSetup";
+import EffectsDialog from "./EffectsDialog";
 
 const SIDEBAR_MIN = 220;
 const SIDEBAR_MAX = 480;
@@ -211,7 +212,7 @@ function Sidebar({ open, onClose, width }: { open: boolean; onClose: () => void;
 
         {/* Footer controls */}
         <div className="px-3 py-2 border-t border-white/5 shrink-0 space-y-1">
-          <PerfModeToggle />
+          <EffectsButton />
           <BackendUrlButton />
         </div>
       </aside>
@@ -219,22 +220,30 @@ function Sidebar({ open, onClose, width }: { open: boolean; onClose: () => void;
   );
 }
 
-function PerfModeToggle() {
-  const perfMode = useSettingsStore((s) => s.performanceMode);
-  const setPerformanceMode = useSettingsStore((s) => s.setPerformanceMode);
+function EffectsButton() {
+  const effects = useSettingsStore((s) => s.effects);
+  const [showDialog, setShowDialog] = useState(false);
+  const disabledCount = Object.values(effects).filter((v) => !v).length;
 
   return (
-    <button
-      onClick={() => setPerformanceMode(!perfMode)}
-      className={`w-full flex items-center gap-2 px-2.5 py-2 rounded-lg text-xs transition-all
-        ${perfMode ? "text-amber-400 hover:bg-amber-500/10" : "text-slate-500 hover:text-slate-300 hover:bg-white/5"}`}
-    >
-      <Zap className="w-3.5 h-3.5 shrink-0" />
-      <span className="flex-1 text-left">Performance</span>
-      <div className={`w-8 h-4.5 rounded-full p-0.5 transition-colors ${perfMode ? "bg-amber-500" : "bg-white/10"}`}>
-        <div className={`w-3.5 h-3.5 rounded-full bg-white shadow-sm transition-transform ${perfMode ? "translate-x-3.5" : "translate-x-0"}`} />
-      </div>
-    </button>
+    <>
+      <button
+        onClick={() => setShowDialog(true)}
+        className={`w-full flex items-center gap-2 px-2.5 py-2 rounded-lg text-xs transition-all
+          ${disabledCount > 0 ? "text-amber-400 hover:bg-amber-500/10" : "text-slate-500 hover:text-slate-300 hover:bg-white/5"}`}
+      >
+        <Zap className="w-3.5 h-3.5 shrink-0" />
+        <span className="flex-1 text-left">Effects</span>
+        {disabledCount > 0 && (
+          <span className="px-1.5 py-0.5 rounded-full bg-amber-500/20 text-amber-400 text-xs font-bold">
+            {disabledCount} off
+          </span>
+        )}
+      </button>
+      <AnimatePresence>
+        {showDialog && <EffectsDialog onClose={() => setShowDialog(false)} />}
+      </AnimatePresence>
+    </>
   );
 }
 

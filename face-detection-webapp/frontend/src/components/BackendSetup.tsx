@@ -1,12 +1,10 @@
 import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Server, Loader2, CheckCircle2, XCircle, Zap } from "lucide-react";
+import { Server, Loader2, CheckCircle2, XCircle } from "lucide-react";
 import { useSettingsStore } from "../store/settingsStore";
 
 export default function BackendSetup({ onDone }: { onDone: () => void }) {
   const setBackendUrl = useSettingsStore((s) => s.setBackendUrl);
-  const performanceMode = useSettingsStore((s) => s.performanceMode);
-  const setPerformanceMode = useSettingsStore((s) => s.setPerformanceMode);
   const [url, setUrl] = useState("http://localhost:8000");
   const [testing, setTesting] = useState(false);
   const [result, setResult] = useState<"ok" | "fail" | null>(null);
@@ -38,9 +36,7 @@ export default function BackendSetup({ onDone }: { onDone: () => void }) {
 
   return (
     <motion.div
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      exit={{ opacity: 0 }}
+      initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
       className="fixed inset-0 z-[100] bg-dark-900/95 backdrop-blur-xl flex items-center justify-center p-4"
     >
       <motion.div
@@ -93,41 +89,13 @@ export default function BackendSetup({ onDone }: { onDone: () => void }) {
             )}
           </AnimatePresence>
 
-          {/* Performance mode toggle */}
-          <button
-            onClick={() => setPerformanceMode(!performanceMode)}
-            className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl border transition-all text-left
-              ${performanceMode
-                ? "bg-amber-500/10 border-amber-500/30"
-                : "bg-white/2 border-white/10 hover:border-white/20"
-              }`}
-          >
-            <Zap className={`w-5 h-5 shrink-0 ${performanceMode ? "text-amber-400" : "text-slate-500"}`} />
-            <div className="flex-1 min-w-0">
-              <span className={`text-sm font-medium block ${performanceMode ? "text-amber-300" : "text-slate-300"}`}>
-                Performance Mode
-              </span>
-              <span className="text-xs text-slate-500">
-                Disables animations for large datasets (50+ photos)
-              </span>
-            </div>
-            <div className={`w-10 h-6 rounded-full p-0.5 transition-colors ${performanceMode ? "bg-amber-500" : "bg-white/10"}`}>
-              <div className={`w-5 h-5 rounded-full bg-white shadow transition-transform ${performanceMode ? "translate-x-4" : "translate-x-0"}`} />
-            </div>
-          </button>
-
           <div className="flex gap-3 pt-2">
-            <button
-              onClick={test}
-              disabled={testing || !url.trim()}
-              className="btn-primary flex-1 flex items-center justify-center gap-2"
-            >
+            <button onClick={test} disabled={testing || !url.trim()}
+              className="btn-primary flex-1 flex items-center justify-center gap-2">
               {testing ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
               {testing ? "Testing..." : "Test & Connect"}
             </button>
-            <button onClick={skip} className="btn-ghost text-sm">
-              Skip
-            </button>
+            <button onClick={skip} className="btn-ghost text-sm">Skip</button>
           </div>
 
           <p className="text-xs text-slate-600 text-center">

@@ -1,4 +1,5 @@
 import { useState, useCallback, useRef, useEffect, useMemo } from "react";
+import { createPortal } from "react-dom";
 import { useParams, useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { motion, AnimatePresence } from "framer-motion";
@@ -6,6 +7,7 @@ import {
   ReactFlow, Background, Controls, MiniMap,
   type Node, type Edge, useNodesState, useEdgesState,
   BackgroundVariant, ReactFlowProvider, useReactFlow,
+  Handle, Position,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import {
@@ -13,10 +15,10 @@ import {
   Loader2, ChevronLeft, ChevronRight, Eye, EyeOff,
   Maximize2, Minimize2, Check, AlertCircle, ChevronDown, RotateCcw,
   Filter, CheckSquare, Square, EyeOff as EyeOffIcon, Pencil, GitMerge as Merge,
-  Ban, Trash2, Plus, Upload, FileArchive,
+  Ban, Trash2, Plus, Upload, FileArchive, Grid3X3, Circle,
 } from "lucide-react";
 import { jobsApi, type UniqueFace, type ImageNode } from "../api/client";
-import { useSettingsStore } from "../store/settingsStore";
+import { useSettingsStore, type EffectsConfig } from "../store/settingsStore";
 import { ResizeHandle } from "../components/Layout";
 
 const FILTER_MIN = 240;
@@ -317,7 +319,9 @@ function ListView({ faces, faceColorMap, jobId, onRefetch }: { faces: UniqueFace
               transition={{ delay: fi * 0.04 }} className="card flex flex-col">
               <div className="p-4 flex items-center gap-3" style={{ borderBottom: `1px solid ${color}20` }}>
                 <div className="w-12 h-12 rounded-full overflow-hidden shrink-0" style={{ boxShadow: `0 0 0 2px ${color}60` }}>
-                  <img src={`${BASE}${thumbUrl(face.face_image_url, 150)}`} alt="Face" className="w-full h-full object-cover" />
+                  <HoverPreview src={`${BASE}${thumbUrl(face.face_image_url, 150)}`} previewSize={180} round>
+                    <img src={`${BASE}${thumbUrl(face.face_image_url, 150)}`} alt="Face" className="w-full h-full object-cover" />
+                  </HoverPreview>
                 </div>
                 <div>
                   <FaceNameTag face={face} index={fi} jobId={jobId} color={color} onRenamed={onRefetch} className="font-semibold text-sm" />
@@ -334,7 +338,9 @@ function ListView({ faces, faceColorMap, jobId, onRefetch }: { faces: UniqueFace
                   {face.matches.map((m, mi) => (
                     <button key={m.image_id} onClick={() => setLightbox({ faceIdx: fi, imgIdx: mi })}
                       className="shrink-0 w-16 h-16 rounded-lg overflow-hidden hover:ring-2 hover:ring-brand-400 transition-all">
-                      <img src={`${BASE}${thumbUrl(m.image_url)}`} alt={m.filename} loading="lazy" className="w-full h-full object-cover" />
+                      <HoverPreview src={`${BASE}${thumbUrl(m.image_url)}`} previewSrc={`${BASE}${m.image_url}`} previewSize={320}>
+                        <img src={`${BASE}${thumbUrl(m.image_url)}`} alt={m.filename} loading="lazy" className="w-full h-full object-cover" />
+                      </HoverPreview>
                     </button>
                   ))}
                 </div>
@@ -368,13 +374,14 @@ type FilterMode = "gray" | "hide";
 function FaceFilterPanel({
   faces, faceColorMap, selectedFaceIds, filterMode,
   onToggleFace, onSelectAll, onDeselectAll, onSetFilterMode,
-  jobId, onRefetch,
+  jobId, onRefetch, hideNoFace, onToggleHideNoFace,
 }: {
   faces: UniqueFace[]; faceColorMap: Map<string, string>;
   selectedFaceIds: Set<string>; filterMode: FilterMode;
   onToggleFace: (id: string) => void; onSelectAll: () => void;
   onDeselectAll: () => void; onSetFilterMode: (mode: FilterMode) => void;
   jobId: string; onRefetch: () => void;
+  hideNoFace: boolean; onToggleHideNoFace: () => void;
 }) {
   const BASE = useSettingsStore((s) => s.httpBase());
   const allSelected = selectedFaceIds.size === faces.length;
@@ -404,6 +411,17 @@ function FaceFilterPanel({
         </button>
       </div>
 
+      {/* Hide no-face images */}
+      <button onClick={onToggleHideNoFace}
+        className={`w-full flex items-center gap-2 px-2 py-1.5 mb-2 rounded-lg text-xs font-medium transition-all shrink-0
+          ${hideNoFace ? "bg-white/5 text-white" : "text-slate-500 hover:text-slate-300"}`}>
+        <ImageIcon className="w-3.5 h-3.5" />
+        <span className="flex-1 text-left">Hide unmatched photos</span>
+        <div className={`w-8 h-4 rounded-full p-0.5 transition-colors ${hideNoFace ? "bg-brand-500" : "bg-white/10"}`}>
+          <div className={`w-3 h-3 rounded-full bg-white shadow-sm transition-transform ${hideNoFace ? "translate-x-4" : "translate-x-0"}`} />
+        </div>
+      </button>
+
       {/* Select all / Deselect all */}
       <div className="flex gap-1 mb-2 shrink-0">
         <button onClick={onSelectAll} disabled={allSelected}
@@ -427,10 +445,9 @@ function FaceFilterPanel({
               className={`flex items-center gap-2 px-2 py-1.5 rounded-lg transition-all group/face
                 ${isDisabled ? "opacity-30" : selected ? "bg-white/5" : "opacity-50 hover:opacity-80"}`}>
               <button onClick={() => onToggleFace(face.id)} className="flex items-center gap-2 flex-1 min-w-0 text-left">
-                <div className="w-9 h-9 rounded-full overflow-hidden shrink-0"
-                  style={{ boxShadow: isDisabled ? "0 0 0 1px rgba(255,255,255,0.05)" : selected ? `0 0 0 2px ${color}` : "0 0 0 1px rgba(255,255,255,0.1)" }}>
-                  <img src={`${BASE}${thumbUrl(face.face_image_url, 150)}`} alt="" className="w-full h-full object-cover" />
-                </div>
+                <FaceAvatar src={`${BASE}${thumbUrl(face.face_image_url, 150)}`} size={36}
+                  className="rounded-full overflow-hidden shrink-0"
+                  style={{ boxShadow: isDisabled ? "0 0 0 1px rgba(255,255,255,0.05)" : selected ? `0 0 0 2px ${color}` : "0 0 0 1px rgba(255,255,255,0.1)" }} />
                 <div className="flex-1 min-w-0">
                   <span className="text-sm font-semibold truncate block" style={{ color: isDisabled ? "#475569" : selected ? color : "#64748b" }}>
                     {faceName(face, i)}
@@ -468,7 +485,72 @@ function FaceFilterPanel({
 // ------------------------------------------------------------------ //
 // Merge Faces Modal                                                    //
 // ------------------------------------------------------------------ //
-function MergeFacesModal({
+/** Image with enlarged preview on hover. Works for face avatars and photo thumbnails. */
+function HoverPreview({
+  src, previewSrc, children, previewSize = 200, round = false,
+}: {
+  src?: string;
+  previewSrc?: string;       // full-res URL for preview (falls back to src)
+  children?: React.ReactNode; // if provided, renders children instead of an img
+  previewSize?: number;
+  round?: boolean;            // true = fixed square/circle, false = natural aspect ratio
+}) {
+  const [hover, setHover] = useState(false);
+  const [pos, setPos] = useState<{ x: number; y: number } | null>(null);
+  const ref = useRef<HTMLDivElement>(null);
+
+  const onEnter = () => {
+    if (ref.current) {
+      const rect = ref.current.getBoundingClientRect();
+      const spaceRight = window.innerWidth - rect.right;
+      const x = spaceRight > previewSize + 20 ? rect.right + 8 : rect.left - previewSize - 8;
+      const y = Math.max(8, Math.min(window.innerHeight - previewSize - 8, rect.top + rect.height / 2 - previewSize / 2));
+      setPos({ x, y });
+    }
+    setHover(true);
+  };
+
+  return (
+    <>
+      <div ref={ref} onMouseEnter={onEnter} onMouseLeave={() => setHover(false)}>
+        {children ?? <img src={src} alt="" className="w-full h-full object-cover" />}
+      </div>
+      {hover && pos && createPortal(
+        <div className="fixed z-[200] pointer-events-none" style={{ left: pos.x, top: pos.y }}>
+          {round ? (
+            <div className="overflow-hidden border-2 border-white/20 shadow-2xl bg-dark-800"
+              style={{ width: previewSize, height: previewSize, borderRadius: "50%" }}>
+              <img src={previewSrc ?? src} alt="" className="w-full h-full object-cover" />
+            </div>
+          ) : (
+            <img src={previewSrc ?? src} alt=""
+              className="rounded-2xl border-2 border-white/20 shadow-2xl bg-dark-800 block"
+              style={{ maxWidth: previewSize, maxHeight: previewSize, objectFit: "contain" }} />
+          )}
+        </div>,
+        document.body,
+      )}
+    </>
+  );
+}
+
+/** Shorthand for face avatar with hover preview */
+function FaceAvatar({
+  src, size = 40, className, style,
+}: {
+  src: string; size?: number; className?: string;
+  style?: React.CSSProperties;
+}) {
+  return (
+    <div className={className} style={{ width: size, height: size, ...style }}>
+      <HoverPreview src={src} previewSize={180} round>
+        <img src={src} alt="" className="w-full h-full object-cover rounded-full" />
+      </HoverPreview>
+    </div>
+  );
+}
+
+function FacesManagerModal({
   faces, faceColorMap, jobId, onClose, onDone,
 }: {
   faces: UniqueFace[]; faceColorMap: Map<string, string>;
@@ -476,33 +558,59 @@ function MergeFacesModal({
 }) {
   const BASE = useSettingsStore((s) => s.httpBase());
   const [selection, setSelection] = useState<Set<string>>(new Set());
-  const [primaryId, setPrimaryId] = useState<string | null>(null);
-  const [merging, setMerging] = useState(false);
+  const [mergePrimaryId, setMergePrimaryId] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
 
   const toggle = (id: string) => {
     setSelection((prev) => {
       const next = new Set(prev);
       if (next.has(id)) {
         next.delete(id);
-        if (primaryId === id) setPrimaryId(next.size > 0 ? [...next][0] : null);
+        if (mergePrimaryId === id) setMergePrimaryId(next.size > 0 ? [...next][0] : null);
       } else {
         next.add(id);
-        if (!primaryId) setPrimaryId(id);
+        if (!mergePrimaryId) setMergePrimaryId(id);
       }
       return next;
     });
   };
 
+  const selectAll = () => { setSelection(new Set(faces.map((f) => f.id))); };
+  const selectNone = () => { setSelection(new Set()); setMergePrimaryId(null); };
+
+  const selectedFaces = faces.filter((f) => selection.has(f.id));
+  const activeFacesSelected = selectedFaces.filter((f) => !f.disabled);
+
   const doMerge = async () => {
-    if (!primaryId || selection.size < 2) return;
-    setMerging(true);
+    if (!mergePrimaryId || activeFacesSelected.length < 2) return;
+    setBusy(true);
     try {
-      const sourceIds = [...selection].filter((id) => id !== primaryId);
-      await jobsApi.mergeFaces(jobId, primaryId, sourceIds, primaryId);
+      const sourceIds = activeFacesSelected.map((f) => f.id).filter((id) => id !== mergePrimaryId);
+      await jobsApi.mergeFaces(jobId, mergePrimaryId, sourceIds, mergePrimaryId);
+      setSelection(new Set());
+      setMergePrimaryId(null);
       onDone();
-    } finally {
-      setMerging(false);
-    }
+    } finally { setBusy(false); }
+  };
+
+  const doBulkDisable = async (disable: boolean) => {
+    setBusy(true);
+    try {
+      for (const f of selectedFaces) {
+        if (f.disabled !== disable) await jobsApi.toggleDisableFace(jobId, f.id);
+      }
+      onDone();
+    } finally { setBusy(false); }
+  };
+
+  const doBulkDelete = async () => {
+    if (!window.confirm(`Delete ${selection.size} face(s)? This permanently removes them and all their matches.`)) return;
+    setBusy(true);
+    try {
+      for (const id of selection) await jobsApi.deleteFace(jobId, id);
+      setSelection(new Set());
+      onDone();
+    } finally { setBusy(false); }
   };
 
   return (
@@ -510,69 +618,165 @@ function MergeFacesModal({
       className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-4" onClick={onClose}>
       <motion.div initial={{ scale: 0.92, opacity: 0 }} animate={{ scale: 1, opacity: 1 }}
         onClick={(e) => e.stopPropagation()}
-        className="w-full max-w-md max-h-[80vh] rounded-2xl bg-dark-800 border border-white/10 flex flex-col shadow-2xl">
+        className="w-full max-w-lg max-h-[85vh] rounded-2xl bg-dark-800 border border-white/10 flex flex-col shadow-2xl">
+
+        {/* Header */}
         <div className="flex items-center justify-between px-5 py-4 border-b border-white/5 shrink-0">
           <div className="flex items-center gap-2">
-            <Merge className="w-5 h-5 text-purple-400" />
-            <h2 className="text-base font-bold text-white">Merge Faces</h2>
+            <Users className="w-5 h-5 text-brand-400" />
+            <h2 className="text-base font-bold text-white">Manage Faces</h2>
+            <span className="text-xs text-slate-500">{faces.length} total</span>
           </div>
           <button onClick={onClose} className="text-slate-500 hover:text-white p-1"><X className="w-5 h-5" /></button>
         </div>
 
-        <p className="px-5 pt-3 text-xs text-slate-400">
-          Select 2+ faces to merge into one. Pick which photo to keep as the display image.
-        </p>
+        {/* Bulk actions bar */}
+        <div className="flex items-center gap-2 px-5 py-3 border-b border-white/5 shrink-0 flex-wrap">
+          <button onClick={selection.size === faces.length ? selectNone : selectAll}
+            className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium border border-white/10 text-slate-400 hover:text-white hover:bg-white/5 transition-all">
+            <CheckSquare className="w-3.5 h-3.5" />
+            {selection.size === faces.length ? "Deselect all" : "Select all"}
+          </button>
 
-        <div className="flex-1 overflow-y-auto px-5 py-3 space-y-1.5 min-h-0">
-          {faces.filter((f) => !f.disabled).map((face, i) => {
+          {selection.size > 0 && (
+            <>
+              <span className="text-xs text-slate-500">{selection.size} selected</span>
+              <div className="flex-1" />
+
+              {activeFacesSelected.length >= 2 && (
+                <button onClick={doMerge} disabled={busy || !mergePrimaryId}
+                  className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium border border-purple-500/30 text-purple-300 hover:bg-purple-500/10 disabled:opacity-30 transition-all">
+                  <Merge className="w-3.5 h-3.5" />Merge
+                </button>
+              )}
+              <button onClick={() => doBulkDisable(true)} disabled={busy}
+                className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium border border-amber-500/30 text-amber-300 hover:bg-amber-500/10 disabled:opacity-30 transition-all">
+                <Ban className="w-3.5 h-3.5" />Disable
+              </button>
+              <button onClick={() => doBulkDisable(false)} disabled={busy}
+                className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium border border-emerald-500/30 text-emerald-300 hover:bg-emerald-500/10 disabled:opacity-30 transition-all">
+                <Eye className="w-3.5 h-3.5" />Enable
+              </button>
+              <button onClick={doBulkDelete} disabled={busy}
+                className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium border border-red-500/30 text-red-300 hover:bg-red-500/10 disabled:opacity-30 transition-all">
+                <Trash2 className="w-3.5 h-3.5" />Delete
+              </button>
+            </>
+          )}
+        </div>
+
+        {/* Merge hint — show only when 2+ selected */}
+        {activeFacesSelected.length >= 2 && (
+          <div className="px-5 pt-2 text-xs text-slate-500 shrink-0">
+            To merge: click "Main" on the face whose photo you want to keep, then click Merge.
+          </div>
+        )}
+
+        {/* Face list */}
+        <div className="flex-1 overflow-y-auto px-5 py-3 space-y-1 min-h-0">
+          {faces.map((face, i) => {
             const color = faceColorMap.get(face.id) ?? PERSON_COLORS[i % PERSON_COLORS.length];
             const checked = selection.has(face.id);
-            const isPrimary = primaryId === face.id;
+            const isPrimary = mergePrimaryId === face.id;
+            const isDisabled = face.disabled;
             return (
-              <button key={face.id} onClick={() => toggle(face.id)}
-                className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all text-left
-                  ${checked ? "bg-purple-500/10 border border-purple-500/30" : "border border-transparent hover:bg-white/5"}`}>
-                <div className={`w-5 h-5 rounded border-2 flex items-center justify-center transition-all shrink-0
-                  ${checked ? "border-purple-400 bg-purple-500" : "border-white/20"}`}>
-                  {checked && <Check className="w-3 h-3 text-black" strokeWidth={3} />}
-                </div>
-                <div className="w-10 h-10 rounded-full overflow-hidden shrink-0"
-                  style={{ boxShadow: isPrimary ? `0 0 0 3px ${color}` : checked ? `0 0 0 2px ${color}50` : "0 0 0 1px rgba(255,255,255,0.1)" }}>
-                  <img src={`${BASE}${thumbUrl(face.face_image_url, 150)}`} alt="" className="w-full h-full object-cover" />
-                </div>
-                <div className="flex-1 min-w-0">
-                  <span className="text-sm font-semibold truncate block" style={{ color: checked ? color : "#64748b" }}>{faceName(face, i)}</span>
-                  <span className="text-xs text-slate-500">{face.matches.length} photos</span>
-                </div>
-                {checked && (
-                  <div onClick={(e) => { e.stopPropagation(); setPrimaryId(face.id); }}
-                    className={`shrink-0 px-2.5 py-1 rounded-lg text-xs font-medium transition-all cursor-pointer
-                      ${isPrimary ? "bg-brand-500 text-black" : "bg-white/5 border border-white/10 text-slate-400 hover:text-white hover:bg-white/10"}`}
-                    title="Use this face as the display photo">
-                    {isPrimary ? "Main" : "Set"}
+              <div key={face.id}
+                className={`flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all
+                  ${checked ? "bg-white/5 border border-brand-500/30" : "border border-transparent hover:bg-white/3"}
+                  ${isDisabled ? "opacity-40" : ""}`}>
+                {/* Checkbox */}
+                <button onClick={() => toggle(face.id)} className="shrink-0">
+                  <div className={`w-5 h-5 rounded border-2 flex items-center justify-center transition-all
+                    ${checked ? "border-brand-400 bg-brand-500" : "border-white/20"}`}>
+                    {checked && <Check className="w-3 h-3 text-black" strokeWidth={3} />}
                   </div>
+                </button>
+
+                {/* Avatar */}
+                <FaceAvatar src={`${BASE}${thumbUrl(face.face_image_url, 150)}`} size={40}
+                  className="rounded-full overflow-hidden shrink-0"
+                  style={{ boxShadow: isPrimary ? `0 0 0 3px ${color}` : `0 0 0 1px ${isDisabled ? "rgba(255,255,255,0.05)" : color + "40"}` }} />
+
+                {/* Info */}
+                <div className="flex-1 min-w-0">
+                  <span className="text-sm font-semibold truncate block" style={{ color: isDisabled ? "#475569" : color }}>
+                    {faceName(face, i)}
+                  </span>
+                  <span className="text-xs text-slate-500">
+                    {face.matches.length} photos{isDisabled ? " · disabled" : ""}
+                  </span>
+                </div>
+
+                {/* Merge primary selector */}
+                {checked && activeFacesSelected.length >= 2 && !isDisabled && (
+                  <button onClick={() => setMergePrimaryId(face.id)}
+                    className={`shrink-0 px-2 py-1 rounded-lg text-xs font-medium transition-all
+                      ${isPrimary ? "bg-brand-500 text-black" : "bg-white/5 border border-white/10 text-slate-400 hover:text-white hover:bg-white/10"}`}
+                    title="Keep this face photo after merge">
+                    {isPrimary ? "Main" : "Set"}
+                  </button>
                 )}
-              </button>
+
+                {/* Individual actions */}
+                <button onClick={async () => { await jobsApi.toggleDisableFace(jobId, face.id); onDone(); }}
+                  className={`shrink-0 p-1.5 rounded-lg transition-colors ${isDisabled ? "text-emerald-400 hover:bg-emerald-500/10" : "text-slate-500 hover:text-amber-400 hover:bg-amber-500/10"}`}
+                  title={isDisabled ? "Enable" : "Disable"}>
+                  {isDisabled ? <Eye className="w-3.5 h-3.5" /> : <Ban className="w-3.5 h-3.5" />}
+                </button>
+                <button onClick={async () => {
+                    if (!window.confirm(`Delete "${faceName(face, i)}"?`)) return;
+                    await jobsApi.deleteFace(jobId, face.id); onDone();
+                  }}
+                  className="shrink-0 p-1.5 rounded-lg text-slate-500 hover:text-red-400 hover:bg-red-500/10 transition-colors"
+                  title="Delete permanently">
+                  <Trash2 className="w-3.5 h-3.5" />
+                </button>
+              </div>
             );
           })}
         </div>
 
-        <div className="flex gap-2 px-5 py-4 border-t border-white/5 shrink-0">
-          <button onClick={doMerge} disabled={selection.size < 2 || !primaryId || merging}
-            className="flex-1 flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-xl text-sm font-semibold bg-purple-500 text-white hover:bg-purple-400 disabled:opacity-30 disabled:cursor-not-allowed transition-all">
-            {merging ? <Loader2 className="w-4 h-4 animate-spin" /> : <Merge className="w-4 h-4" />}
-            {merging ? "Merging..." : `Merge ${selection.size} faces`}
-          </button>
-          <button onClick={onClose}
-            className="px-4 py-2.5 rounded-xl text-sm font-medium border border-white/10 text-slate-400 hover:text-white hover:bg-white/5 transition-all">
-            Cancel
-          </button>
-        </div>
+        {/* Footer */}
+        {busy && (
+          <div className="flex items-center justify-center gap-2 px-5 py-3 border-t border-white/5 shrink-0">
+            <Loader2 className="w-4 h-4 animate-spin text-brand-400" />
+            <span className="text-xs text-slate-400">Processing...</span>
+          </div>
+        )}
       </motion.div>
     </motion.div>
   );
 }
 
+
+// ------------------------------------------------------------------ //
+// Custom node types with handles on all 4 sides                        //
+// ------------------------------------------------------------------ //
+function PhotoNode({ data }: { data: { label: React.ReactNode } }) {
+  return (
+    <>
+      <Handle type="source" position={Position.Top} id="top" />
+      <Handle type="source" position={Position.Right} id="right" />
+      <Handle type="source" position={Position.Bottom} id="bottom" />
+      <Handle type="source" position={Position.Left} id="left" />
+      {data.label}
+    </>
+  );
+}
+
+function FaceNode({ data }: { data: { label: React.ReactNode } }) {
+  return (
+    <>
+      <Handle type="target" position={Position.Top} id="top" />
+      <Handle type="target" position={Position.Right} id="right" />
+      <Handle type="target" position={Position.Bottom} id="bottom" />
+      <Handle type="target" position={Position.Left} id="left" />
+      {data.label}
+    </>
+  );
+}
+
+const nodeTypes = { photoNode: PhotoNode, faceNode: FaceNode };
 
 // ------------------------------------------------------------------ //
 // Graph building                                                       //
@@ -585,7 +789,10 @@ const FACE_W = 88;
 const FACE_H = 112;
 const FACE_IMG_H = 68;
 const FACE_GAP = 36;
-const SECTION_GAP = 180;
+const SECTION_GAP = 140;
+
+type LayoutMode = "square" | "radial";
+type Side = "top" | "right" | "bottom" | "left";
 
 function buildGraph(
   images: ImageNode[],
@@ -595,53 +802,197 @@ function buildGraph(
   BASE: string,
   selectedFaceIds: Set<string>,
   filterMode: FilterMode,
-  perfMode: boolean,
+  fx: EffectsConfig,
+  layout: LayoutMode,
+  hideNoFace: boolean,
 ): { nodes: Node[]; edges: Edge[] } {
   const nodes: Node[] = [];
   const edges: Edge[] = [];
 
-  const allSelected = selectedFaceIds.size === faces.length;
-
-  // Determine which faces to show
+  // Check if all active (non-disabled) faces are selected — ignore disabled IDs in selectedFaceIds
+  const allSelected = faces.every((f) => selectedFaceIds.has(f.id));
   const visibleFaces = filterMode === "hide" && !allSelected
-    ? faces.filter((f) => selectedFaceIds.has(f.id))
-    : faces;
-
+    ? faces.filter((f) => selectedFaceIds.has(f.id)) : faces;
   const visibleFaceIds = new Set(visibleFaces.map((f) => f.id));
-
-  // Determine which images to show
-  const visibleImages = filterMode === "hide" && !allSelected
-    ? images.filter((img) => img.faces.some((f) => visibleFaceIds.has(f.unique_face_id)))
+  // Filter images: hide mode removes unselected, hideNoFace removes images with 0 face matches
+  let visibleImages = filterMode === "hide" && !allSelected
+    ? images.filter((img) => img.faces.some((f) => selectedFaceIds.has(f.unique_face_id)))
     : images;
+  if (hideNoFace) {
+    visibleImages = visibleImages.filter((img) => img.faces.length > 0);
+  }
 
-  // Photo grid
-  const cols = Math.max(1, Math.ceil(Math.sqrt(visibleImages.length)));
-  const rows = Math.ceil(visibleImages.length / cols);
-  const gridW = cols * PHOTO_W + (cols - 1) * PHOTO_GAP_X;
-  const gridH = rows * PHOTO_H + (rows - 1) * PHOTO_GAP_Y;
-  const gridStartX = -gridW / 2;
-  const gridStartY = 0;
+  // ── Compute photo positions ────────────────────────────────────────
+  const photoPositions = new Map<string, { x: number; y: number }>();
 
-  visibleImages.forEach((img, idx) => {
-    const col = idx % cols;
-    const row = Math.floor(idx / cols);
-    const x = gridStartX + col * (PHOTO_W + PHOTO_GAP_X);
-    const y = gridStartY + row * (PHOTO_H + PHOTO_GAP_Y);
+  if (layout === "radial") {
+    // Pack photos inside a circle using concentric rings (sunflower/Vogel spiral)
+    const cellSize = Math.max(PHOTO_W, PHOTO_H) + 16;
+    const n = visibleImages.length;
+    // Golden angle spiral packing
+    const goldenAngle = Math.PI * (3 - Math.sqrt(5));
+    const scaleFactor = n <= 1 ? 0 : cellSize / Math.sqrt(goldenAngle);
+    visibleImages.forEach((img, idx) => {
+      const r = scaleFactor * Math.sqrt(idx);
+      const theta = idx * goldenAngle - Math.PI / 2;
+      photoPositions.set(img.id, {
+        x: Math.cos(theta) * r - PHOTO_W / 2,
+        y: Math.sin(theta) * r - PHOTO_H / 2,
+      });
+    });
+  } else {
+    // Square grid
+    const cols = Math.max(1, Math.ceil(Math.sqrt(visibleImages.length)));
+    const gridW = cols * PHOTO_W + (cols - 1) * PHOTO_GAP_X;
+    const gridStartX = -gridW / 2;
+    visibleImages.forEach((img, idx) => {
+      const col = idx % cols;
+      const row = Math.floor(idx / cols);
+      photoPositions.set(img.id, {
+        x: gridStartX + col * (PHOTO_W + PHOTO_GAP_X),
+        y: row * (PHOTO_H + PHOTO_GAP_Y),
+      });
+    });
+  }
 
+  // ── Compute bounding box of all photos ─────────────────────────────
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  photoPositions.forEach(({ x, y }) => {
+    minX = Math.min(minX, x);
+    minY = Math.min(minY, y);
+    maxX = Math.max(maxX, x + PHOTO_W);
+    maxY = Math.max(maxY, y + PHOTO_H);
+  });
+  const centerX = (minX + maxX) / 2;
+  const centerY = (minY + maxY) / 2;
+
+  // ── Assign each face to a side based on connected photos ───────────
+  const faceAssignments = new Map<string, Side>();
+  const facePositions = new Map<string, { x: number; y: number; side: Side }>();
+
+  if (layout === "radial") {
+    // In radial, place faces evenly around the outer ring.
+    // Compute the outer radius from the bounding box of packed photos.
+    const outerRadius = Math.max(
+      Math.abs(minX - centerX), Math.abs(maxX - centerX),
+      Math.abs(minY - centerY), Math.abs(maxY - centerY),
+    ) + SECTION_GAP + FACE_W;
+
+    visibleFaces.forEach((face, i) => {
+      const angle = (i / visibleFaces.length) * 2 * Math.PI - Math.PI / 2;
+      const fx2 = centerX + Math.cos(angle) * outerRadius - FACE_W / 2;
+      const fy2 = centerY + Math.sin(angle) * outerRadius - FACE_H / 2;
+      facePositions.set(face.id, { x: fx2, y: fy2, side:
+        Math.abs(Math.cos(angle)) > Math.abs(Math.sin(angle))
+          ? (Math.cos(angle) > 0 ? "right" : "left")
+          : (Math.sin(angle) > 0 ? "bottom" : "top"),
+      });
+      faceAssignments.set(face.id, facePositions.get(face.id)!.side);
+    });
+  } else {
+    // Square: compute angle of each face's connected-photo centroid, sort by angle,
+    // then distribute evenly across all 4 sides.
+    const faceAngles: { face: UniqueFace; angle: number }[] = [];
+    visibleFaces.forEach((face) => {
+      const connectedImgs = visibleImages.filter((img) =>
+        img.faces.some((f) => f.unique_face_id === face.id));
+      if (connectedImgs.length === 0) {
+        faceAngles.push({ face, angle: Math.PI / 2 }); // default bottom
+        return;
+      }
+      let avgX = 0, avgY = 0;
+      connectedImgs.forEach((img) => {
+        const pos = photoPositions.get(img.id)!;
+        avgX += pos.x + PHOTO_W / 2;
+        avgY += pos.y + PHOTO_H / 2;
+      });
+      avgX /= connectedImgs.length;
+      avgY /= connectedImgs.length;
+      faceAngles.push({ face, angle: Math.atan2(avgY - centerY, avgX - centerX) });
+    });
+    // Sort by angle so nearby faces cluster on the same side
+    faceAngles.sort((a, b) => a.angle - b.angle);
+    // Distribute evenly: split sorted list into 4 roughly equal groups
+    const sides: Side[] = ["right", "bottom", "left", "top"];
+    const perSide = Math.ceil(faceAngles.length / 4);
+    faceAngles.forEach(({ face }, idx) => {
+      const sideIdx = Math.min(3, Math.floor(idx / perSide));
+      faceAssignments.set(face.id, sides[sideIdx]);
+    });
+  }
+
+  // Group faces by side
+  const sideFaces: Record<Side, UniqueFace[]> = { top: [], right: [], bottom: [], left: [] };
+  visibleFaces.forEach((f) => sideFaces[faceAssignments.get(f.id) ?? "bottom"].push(f));
+
+  // ── Compute face positions per side ────────────────────────────────
+  const placeFacesOnSide = (facesOnSide: UniqueFace[], side: Side) => {
+    const count = facesOnSide.length;
+    if (count === 0) return;
+
+    if (layout === "radial") {
+      const radius = Math.max(200, visibleImages.length * 12) + SECTION_GAP;
+      // Determine angle range for this side
+      const angleRanges: Record<Side, [number, number]> = {
+        right: [-Math.PI / 4, Math.PI / 4],
+        bottom: [Math.PI / 4, 3 * Math.PI / 4],
+        left: [3 * Math.PI / 4, 5 * Math.PI / 4],
+        top: [-3 * Math.PI / 4, -Math.PI / 4],
+      };
+      const [startA, endA] = angleRanges[side];
+      facesOnSide.forEach((face, i) => {
+        const t = count === 1 ? 0.5 : i / (count - 1);
+        const angle = startA + t * (endA - startA);
+        facePositions.set(face.id, {
+          x: Math.cos(angle) * radius - FACE_W / 2,
+          y: Math.sin(angle) * radius - FACE_H / 2,
+          side,
+        });
+      });
+    } else {
+      // Square layout
+      if (side === "top" || side === "bottom") {
+        const totalW = count * FACE_W + (count - 1) * FACE_GAP;
+        const startX = centerX - totalW / 2;
+        const y = side === "top" ? minY - SECTION_GAP - FACE_H : maxY + SECTION_GAP;
+        facesOnSide.forEach((face, i) => {
+          facePositions.set(face.id, { x: startX + i * (FACE_W + FACE_GAP), y, side });
+        });
+      } else {
+        const totalH = count * FACE_H + (count - 1) * FACE_GAP;
+        const startY = centerY - totalH / 2;
+        const x = side === "left" ? minX - SECTION_GAP - FACE_W : maxX + SECTION_GAP;
+        facesOnSide.forEach((face, i) => {
+          facePositions.set(face.id, { x, y: startY + i * (FACE_H + FACE_GAP), side });
+        });
+      }
+    }
+  };
+
+  // For radial, face positions are already computed above; only run for square
+  if (layout !== "radial") {
+    (["top", "right", "bottom", "left"] as Side[]).forEach((s) => placeFacesOnSide(sideFaces[s], s));
+  }
+
+  // Handle direction: face nodes receive connections from the grid side
+  const sideToTarget: Record<Side, string> = {
+    top: "bottom", right: "left", bottom: "top", left: "right",
+  };
+
+  // ── Create photo nodes ─────────────────────────────────────────────
+  visibleImages.forEach((img) => {
+    const pos = photoPositions.get(img.id)!;
     const hasFaceMatches = img.faces.some((f) => visibleFaceIds.has(f.unique_face_id));
     const topColor = hasFaceMatches
       ? faceColorMap.get(img.faces.find((f) => visibleFaceIds.has(f.unique_face_id))?.unique_face_id ?? "") ?? "transparent"
       : "transparent";
-
-    // Determine opacity based on filter
     const isRelevant = allSelected || img.faces.some((f) => selectedFaceIds.has(f.unique_face_id));
     const nodeOpacity = filterMode === "gray" && !allSelected && !isRelevant ? 0.15 : 1;
 
     nodes.push({
       id: `photo-${img.id}`,
-      position: { x, y },
-      sourcePosition: "bottom" as const,
-      targetPosition: "top" as const,
+      type: "photoNode",
+      position: pos,
       data: {
         label: (
           <div className="flex flex-col items-center gap-0.5 select-none w-full h-full"
@@ -665,7 +1016,7 @@ function buildGraph(
         border: hasFaceMatches
           ? `1.5px solid ${topColor + "55"}`
           : "1.5px dashed rgba(255,255,255,0.1)",
-        borderTop: hasFaceMatches ? `3px solid ${topColor}` : "1.5px dashed rgba(255,255,255,0.1)",
+        borderTop: hasFaceMatches ? `3px solid ${topColor}` : undefined,
         borderRadius: "14px",
         width: PHOTO_W,
         height: PHOTO_H,
@@ -674,32 +1025,28 @@ function buildGraph(
         justifyContent: "center",
         cursor: "default",
         opacity: nodeOpacity,
-        boxShadow: perfMode ? "none" : (hasFaceMatches
+        boxShadow: fx.nodeShadows ? (hasFaceMatches
           ? `0 0 16px ${topColor}18, 0 4px 20px rgba(0,0,0,0.5)`
-          : "0 4px 16px rgba(0,0,0,0.4)"),
+          : "0 4px 16px rgba(0,0,0,0.4)") : "none",
         padding: "8px 6px 6px",
-        transition: perfMode ? "none" : "opacity 0.3s ease",
+        transition: fx.transitions ? "opacity 0.3s ease" : "none",
       },
     });
   });
 
-  // Face row
-  const faceRowW = visibleFaces.length * FACE_W + (visibleFaces.length - 1) * FACE_GAP;
-  const faceRowStartX = -faceRowW / 2;
-  const faceRowY = gridStartY + gridH + SECTION_GAP;
-
-  visibleFaces.forEach((face, i) => {
-    const color = faceColorMap.get(face.id) ?? PERSON_COLORS[i % PERSON_COLORS.length];
-    const x = faceRowStartX + i * (FACE_W + FACE_GAP);
+  // ── Create face nodes ──────────────────────────────────────────────
+  visibleFaces.forEach((face) => {
+    const fp = facePositions.get(face.id);
+    if (!fp) return;
+    const color = faceColorMap.get(face.id) ?? PERSON_COLORS[0];
     const globalIdx = faces.indexOf(face);
     const isSelected = selectedFaceIds.has(face.id);
     const faceOpacity = filterMode === "gray" && !allSelected && !isSelected ? 0.15 : 1;
 
     nodes.push({
       id: `face-${face.id}`,
-      position: { x, y: faceRowY },
-      sourcePosition: "bottom" as const,
-      targetPosition: "top" as const,
+      type: "faceNode",
+      position: { x: fp.x, y: fp.y },
       data: {
         label: (
           <div className="select-none overflow-hidden" style={{
@@ -708,7 +1055,7 @@ function buildGraph(
             background: `linear-gradient(175deg, ${color}14 0%, #090910 60%)`,
             border: `2px solid ${color}60`,
             borderRadius: "16px 16px 10px 10px",
-            boxShadow: perfMode ? "none" : `0 0 0 3px ${color}0d, 0 6px 24px ${color}28`,
+            boxShadow: fx.nodeShadows ? `0 0 0 3px ${color}0d, 0 6px 24px ${color}28` : "none",
           }}>
             <div style={{ flexShrink: 0, height: FACE_IMG_H, overflow: "hidden", borderRadius: "14px 14px 0 0" }}>
               <img src={`${BASE}${thumbUrl(face.face_image_url, 150)}`} alt="" style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
@@ -729,30 +1076,34 @@ function buildGraph(
         padding: 0,
         boxShadow: "none",
         opacity: faceOpacity,
-        transition: perfMode ? "none" : "opacity 0.3s ease",
+        transition: fx.transitions ? "opacity 0.3s ease" : "none",
       },
     });
   });
 
-  // Edges
+  // ── Edges ──────────────────────────────────────────────────────────
   visibleImages.forEach((img) => {
     img.faces.forEach((fm) => {
       if (!visibleFaceIds.has(fm.unique_face_id)) return;
       const color = faceColorMap.get(fm.unique_face_id) ?? "#eab308";
       const isSelected = selectedFaceIds.has(fm.unique_face_id);
       const edgeOpacity = filterMode === "gray" && !allSelected && !isSelected ? 0.1 : 0.65;
+      const fp = facePositions.get(fm.unique_face_id);
+      const side = fp?.side ?? "bottom";
 
       edges.push({
         id: `e-${img.id}-${fm.unique_face_id}`,
         source: `photo-${img.id}`,
         target: `face-${fm.unique_face_id}`,
-        animated: perfMode ? false : (isSelected || allSelected),
+        sourceHandle: side,
+        targetHandle: sideToTarget[side],
+        animated: fx.edgeAnimations && (isSelected || allSelected),
         style: {
           stroke: isSelected || allSelected ? color : "#1e1e2e",
           strokeWidth: isSelected || allSelected ? 2 : 1,
           strokeOpacity: edgeOpacity,
-          filter: perfMode ? "none" : (isSelected || allSelected ? `drop-shadow(0 0 4px ${color}80)` : "none"),
-          transition: perfMode ? "none" : "all 0.3s ease",
+          filter: fx.edgeGlow && (isSelected || allSelected) ? `drop-shadow(0 0 4px ${color}80)` : "none",
+          transition: fx.transitions ? "all 0.3s ease" : "none",
         },
       });
     });
@@ -766,7 +1117,7 @@ function buildGraph(
 // ------------------------------------------------------------------ //
 function GraphCanvas({
   images, faces, faceColorMap, jobId, onRefetch,
-  selectedFaceIds, filterMode,
+  selectedFaceIds, filterMode, hideNoFace,
 }: {
   images: ImageNode[];
   faces: UniqueFace[];
@@ -775,12 +1126,14 @@ function GraphCanvas({
   onRefetch: () => void;
   selectedFaceIds: Set<string>;
   filterMode: FilterMode;
+  hideNoFace: boolean;
 }) {
   const BASE = useSettingsStore((s) => s.httpBase());
-  const perfMode = useSettingsStore((s) => s.performanceMode) || images.length > 30;
+  const fx = useSettingsStore((s) => s.effects);
   const [popupImageId, setPopupImageId] = useState<string | null>(null);
   const [hoveredFaceId, setHoveredFaceId] = useState<string | null>(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
+  const [layout, setLayout] = useState<LayoutMode>("square");
   const containerRef = useRef<HTMLDivElement>(null);
 
   const popupImage = useMemo(
@@ -800,8 +1153,8 @@ function GraphCanvas({
   }, []);
 
   const { nodes: initNodes, edges: initEdges } = useMemo(
-    () => buildGraph(images, faces, faceColorMap, setPopupImageId, BASE, selectedFaceIds, filterMode, perfMode),
-    [images, faces, faceColorMap, BASE, selectedFaceIds, filterMode, perfMode]
+    () => buildGraph(images, faces, faceColorMap, setPopupImageId, BASE, selectedFaceIds, filterMode, fx, layout, hideNoFace),
+    [images, faces, faceColorMap, BASE, selectedFaceIds, filterMode, fx, layout, hideNoFace]
   );
   const [nodes, setNodes, onNodesChange] = useNodesState(initNodes);
   const [edges, setEdges, onEdgesChange] = useEdgesState(initEdges);
@@ -834,10 +1187,8 @@ function GraphCanvas({
   }, [hoveredFaceId, images]);
 
   useEffect(() => {
-    // Skip hover effects entirely in perf mode
-    if (perfMode) return;
-
-    if (!hoveredFaceId) {
+    if (!hoveredFaceId || !fx.hoverEffects) {
+      // Restore base state (with correct animations from buildGraph)
       setNodes(initNodes);
       setEdges(initEdges);
       return;
@@ -850,10 +1201,10 @@ function GraphCanvas({
         const isHighlighted = e.target === `face-${hoveredFaceId}`;
         return {
           ...e,
-          animated: isHighlighted,
+          animated: fx.edgeAnimations && isHighlighted,
           style: isHighlighted
-            ? { stroke: hColor, strokeWidth: 3.5, strokeOpacity: 1, filter: `drop-shadow(0 0 8px ${hColor})`, transition: "all 0.2s ease" }
-            : { stroke: "#1e1e2e", strokeWidth: 1, strokeOpacity: 0.2, filter: "none", transition: "all 0.2s ease" },
+            ? { stroke: hColor, strokeWidth: 3.5, strokeOpacity: 1, filter: fx.edgeGlow ? `drop-shadow(0 0 8px ${hColor})` : "none", transition: fx.transitions ? "all 0.2s ease" : "none" }
+            : { stroke: "#1e1e2e", strokeWidth: 1, strokeOpacity: 0.2, filter: "none", transition: fx.transitions ? "all 0.2s ease" : "none" },
         };
       })
     );
@@ -867,25 +1218,25 @@ function GraphCanvas({
           style: {
             ...n.style,
             opacity: isVisible ? 1 : 0.12,
-            transition: "all 0.2s ease",
-            ...(isSelf ? { filter: `drop-shadow(0 0 18px ${hColor}) brightness(1.15)` } : { filter: "none" }),
+            transition: fx.transitions ? "all 0.2s ease" : "none",
+            ...(isSelf && fx.nodeShadows ? { filter: `drop-shadow(0 0 18px ${hColor}) brightness(1.15)` } : { filter: "none" }),
           },
         };
       })
     );
-  }, [hoveredFaceId, connectedPhotoIds, faceColorMap, setEdges, setNodes, initNodes, initEdges, perfMode]);
+  }, [hoveredFaceId, connectedPhotoIds, faceColorMap, setEdges, setNodes, initNodes, initEdges, fx.hoverEffects]);
 
   const handleNodeMouseEnter = useCallback((_: React.MouseEvent, node: Node) => {
-    if (perfMode) return;
+    if (!fx.hoverEffects) return;
     if (!node.id.startsWith("face-")) return;
     const faceId = node.id.slice(5);
     if (!allSelected && !selectedFaceIds.has(faceId)) return;
     setHoveredFaceId(faceId);
-  }, [allSelected, selectedFaceIds, perfMode]);
+  }, [allSelected, selectedFaceIds, fx.hoverEffects]);
   const handleNodeMouseLeave = useCallback((_: React.MouseEvent, node: Node) => {
-    if (perfMode) return;
+    if (!fx.hoverEffects) return;
     if (node.id.startsWith("face-")) setHoveredFaceId(null);
-  }, [perfMode]);
+  }, [fx.hoverEffects]);
 
   return (
     <>
@@ -899,6 +1250,7 @@ function GraphCanvas({
       <div ref={containerRef} className="relative w-full h-full">
         <ReactFlow
           nodes={nodes} edges={edges}
+          nodeTypes={nodeTypes}
           onNodesChange={onNodesChange} onEdgesChange={onEdgesChange}
           onNodeMouseEnter={handleNodeMouseEnter} onNodeMouseLeave={handleNodeMouseLeave}
           fitView fitViewOptions={{ padding: 0.15 }}
@@ -910,7 +1262,7 @@ function GraphCanvas({
             background: "rgba(18,18,26,0.9)", border: "1px solid rgba(255,255,255,0.08)",
             borderRadius: "10px", backdropFilter: "blur(8px)",
           }} />
-          {!perfMode && (
+          {fx.minimap && (
             <MiniMap style={{
               background: "#0d0d18", border: "1px solid rgba(255,255,255,0.06)", borderRadius: "10px",
             }} nodeColor={(n) => {
@@ -922,6 +1274,19 @@ function GraphCanvas({
 
         {/* Top-right controls */}
         <div className="absolute top-3 right-3 z-10 flex items-center gap-1">
+          {/* Layout toggle */}
+          <div className="flex items-center gap-0.5 p-0.5 rounded-lg bg-black/50 border border-white/10 backdrop-blur">
+            <button onClick={() => setLayout("square")}
+              className={`p-1.5 rounded-md transition-all ${layout === "square" ? "bg-brand-500 text-black" : "text-slate-400 hover:text-white"}`}
+              title="Square layout">
+              <Grid3X3 className="w-3.5 h-3.5" />
+            </button>
+            <button onClick={() => setLayout("radial")}
+              className={`p-1.5 rounded-md transition-all ${layout === "radial" ? "bg-brand-500 text-black" : "text-slate-400 hover:text-white"}`}
+              title="Radial layout">
+              <Circle className="w-3.5 h-3.5" />
+            </button>
+          </div>
           <button onClick={resetLayout}
             className="p-1.5 rounded-lg bg-black/50 border border-white/10 text-slate-400 hover:text-white hover:bg-black/70 backdrop-blur transition-all"
             title="Reset positions">
@@ -964,6 +1329,7 @@ export default function ResultsPage() {
   // Filter state
   const [selectedFaceIds, setSelectedFaceIds] = useState<Set<string>>(new Set());
   const [filterMode, setFilterMode] = useState<FilterMode>("gray");
+  const [hideNoFace, setHideNoFace] = useState(true);
   const [filterOpen, setFilterOpen] = useState(false);
   const [filterWidth, setFilterWidth] = useState(FILTER_DEFAULT);
   const handleFilterResize = useCallback((delta: number) => {
@@ -973,7 +1339,7 @@ export default function ResultsPage() {
   // Add images state
   const [addingImages, setAddingImages] = useState(false);
   const addImagesRef = useRef<HTMLInputElement>(null);
-  const [mergeOpen, setMergeOpen] = useState(false);
+  const [facesManagerOpen, setFacesManagerOpen] = useState(false);
 
   const handleAddImages = async (fileList: FileList | null) => {
     if (!fileList || !jobId) return;
@@ -1004,9 +1370,11 @@ export default function ResultsPage() {
     [faces]
   );
 
-  // Initialize selectedFaceIds when faces load
+  // Initialize selectedFaceIds once when faces first load
+  const initialized = useRef(false);
   useEffect(() => {
-    if (faces.length > 0 && selectedFaceIds.size === 0) {
+    if (faces.length > 0 && !initialized.current) {
+      initialized.current = true;
       setSelectedFaceIds(new Set(faces.map((f) => f.id)));
     }
   }, [faces]);
@@ -1057,12 +1425,13 @@ export default function ResultsPage() {
             Add Images
           </button>
 
-          {/* Merge faces */}
-          {allFaces.filter((f) => !f.disabled).length >= 2 && (
-            <button onClick={() => setMergeOpen(true)}
-              className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium border border-purple-500/30 text-purple-300 hover:bg-purple-500/10 transition-all">
-              <Merge className="w-3.5 h-3.5" />
-              Merge
+          {/* Faces manager */}
+          {allFaces.length > 0 && (
+            <button onClick={() => setFacesManagerOpen(true)}
+              className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium border border-white/10 text-slate-400 hover:text-white hover:bg-white/5 transition-all">
+              <Users className="w-3.5 h-3.5" />
+              Faces
+              <span className="px-1.5 py-0 rounded-full bg-white/10 text-xs text-slate-400 ml-0.5">{allFaces.length}</span>
             </button>
           )}
 
@@ -1141,8 +1510,10 @@ export default function ResultsPage() {
                               {undetectedImages.map((img) => (
                                 <button key={img.id} onClick={() => setUndetectedPopupId(img.id)}
                                   className="group relative aspect-square rounded-lg overflow-hidden border border-white/8 hover:border-amber-500/40 transition-all">
-                                  <img src={`${BASE}${thumbUrl(img.image_url)}`} alt={img.filename} loading="lazy"
-                                    className="w-full h-full object-cover opacity-60 group-hover:opacity-90 transition-opacity" />
+                                  <HoverPreview src={`${BASE}${thumbUrl(img.image_url)}`} previewSrc={`${BASE}${img.image_url}`} previewSize={320}>
+                                    <img src={`${BASE}${thumbUrl(img.image_url)}`} alt={img.filename} loading="lazy"
+                                      className="w-full h-full object-cover opacity-60 group-hover:opacity-90 transition-opacity" />
+                                  </HoverPreview>
                                   <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/80 to-transparent p-1">
                                     <p className="text-xs text-slate-300 truncate text-center">{img.filename}</p>
                                   </div>
@@ -1161,6 +1532,7 @@ export default function ResultsPage() {
                     images={images} faces={faces} faceColorMap={faceColorMap}
                     jobId={jobId!} onRefetch={refetch}
                     selectedFaceIds={selectedFaceIds} filterMode={filterMode}
+                    hideNoFace={hideNoFace}
                   />
                 </ReactFlowProvider>
               )}
@@ -1187,6 +1559,7 @@ export default function ResultsPage() {
                     onToggleFace={toggleFace} onSelectAll={selectAll}
                     onDeselectAll={deselectAll} onSetFilterMode={setFilterMode}
                     jobId={jobId!} onRefetch={refetch}
+                    hideNoFace={hideNoFace} onToggleHideNoFace={() => setHideNoFace((v) => !v)}
                   />
                 </div>
               </motion.div>
@@ -1203,11 +1576,11 @@ export default function ResultsPage() {
         )}
       </AnimatePresence>
 
-      {/* Merge modal */}
+      {/* Faces manager modal */}
       <AnimatePresence>
-        {mergeOpen && (
-          <MergeFacesModal faces={allFaces} faceColorMap={faceColorMap} jobId={jobId!}
-            onClose={() => setMergeOpen(false)} onDone={() => { setMergeOpen(false); refetch(); }} />
+        {facesManagerOpen && (
+          <FacesManagerModal faces={allFaces} faceColorMap={faceColorMap} jobId={jobId!}
+            onClose={() => setFacesManagerOpen(false)} onDone={() => refetch()} />
         )}
       </AnimatePresence>
 
