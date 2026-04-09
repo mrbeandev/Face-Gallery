@@ -1,5 +1,45 @@
+# Python
+venv/
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+
+# Database
+*.db
+*.sqlite
+*.sqlite3
+
+# Uploaded & processed files
+face-detection-webapp/backend/uploads/
+face-detection-webapp/backend/results/
+input/
+UNIQUE/
+sorted_by_face/
+
+# Images (sample data)
 *.png
 *.jpg
-.venv
-venv
 *.jpeg
+*.gif
+*.bmp
+*.webp
+*.tiff
+*.tif
+*.zip
+
+# Node
+node_modules/
+face-detection-webapp/frontend/dist/
+face-detection-webapp/frontend/.vite/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
