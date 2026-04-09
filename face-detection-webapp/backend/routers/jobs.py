@@ -536,7 +536,8 @@ async def add_images_to_job(
 @router.post("/jobs/{job_id}/images/{image_id}/faces/{unique_face_id}", status_code=201)
 def add_face_match_manual(
     job_id: str, image_id: str, unique_face_id: str,
-    db: Annotated[Session, Depends(get_db)],
+    face_box: list[int] | None = Body(None, embed=True),
+    db: Session = Depends(get_db),
 ):
     job = db.get(Job, job_id)
     if not job:
@@ -557,7 +558,7 @@ def add_face_match_manual(
         job_id=job_id,
         unique_face_id=unique_face_id,
         image_id=image_id,
-        face_box=None,
+        face_box=json.dumps(face_box) if face_box else None,
     )
     db.add(match)
     db.commit()

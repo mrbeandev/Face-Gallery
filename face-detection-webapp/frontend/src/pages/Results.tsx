@@ -126,11 +126,18 @@ function PhotoPopup({
   const imgRef = useRef<HTMLImageElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
+  // Draw-box mode: after clicking an unassigned face, user draws a rectangle on the image
+  const [drawingFaceId, setDrawingFaceId] = useState<string | null>(null);
+  const [drawStart, setDrawStart] = useState<{ x: number; y: number } | null>(null);
+  const [drawEnd, setDrawEnd] = useState<{ x: number; y: number } | null>(null);
+  const drawCanvasRef = useRef<HTMLCanvasElement>(null);
+
   const assignedFaceIds = useMemo(
     () => new Set(image.faces.map((f) => f.unique_face_id)),
     [image.faces]
   );
 
+  // Draw existing face boxes
   useEffect(() => {
     if (!showFaces || !imgSize || !canvasRef.current) return;
     const ctx = canvasRef.current.getContext("2d");
@@ -168,24 +175,112 @@ function PhotoPopup({
     });
   }, [showFaces, imgSize, image, faceColorMap]);
 
+  // Draw the in-progress rectangle while user is dragging
+  useEffect(() => {
+    if (!drawCanvasRef.current || !imgSize) return;
+    const ctx = drawCanvasRef.current.getContext("2d");
+    if (!ctx) return;
+    ctx.clearRect(0, 0, imgSize.nw, imgSize.nh);
+    if (!drawStart || !drawEnd) return;
+    const color = drawingFaceId ? (faceColorMap.get(drawingFaceId) ?? "#eab308") : "#eab308";
+    const x = Math.min(drawStart.x, drawEnd.x);
+    const y = Math.min(drawStart.y, drawEnd.y);
+    const w = Math.abs(drawEnd.x - drawStart.x);
+    const h = Math.abs(drawEnd.y - drawStart.y);
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 2;
+    ctx.setLineDash([6, 4]);
+    ctx.strokeRect(x, y, w, h);
+    ctx.setLineDash([]);
+    ctx.fillStyle = color + "20";
+    ctx.fillRect(x, y, w, h);
+  }, [drawStart, drawEnd, imgSize, drawingFaceId, faceColorMap]);
+
   const handleImgLoad = () => {
     const el = imgRef.current;
     if (!el) return;
     setImgSize({ w: el.naturalWidth, h: el.naturalHeight, nw: el.width, nh: el.height });
   };
 
-  const handleToggle = async (face: UniqueFace) => {
-    if (pendingFaceId) return;
-    setPendingFaceId(face.id);
+  const getRelativePos = (e: React.MouseEvent) => {
+    const rect = imgRef.current?.getBoundingClientRect();
+    if (!rect) return { x: 0, y: 0 };
+    return { x: e.clientX - rect.left, y: e.clientY - rect.top };
+  };
+
+  const handleDrawMouseDown = (e: React.MouseEvent) => {
+    if (!drawingFaceId) return;
+    e.preventDefault();
+    setDrawStart(getRelativePos(e));
+    setDrawEnd(null);
+  };
+
+  const handleDrawMouseMove = (e: React.MouseEvent) => {
+    if (!drawingFaceId || !drawStart) return;
+    setDrawEnd(getRelativePos(e));
+  };
+
+  const handleDrawMouseUp = async () => {
+    if (!drawingFaceId || !drawStart || !drawEnd || !imgSize) return;
+    // Convert display coords to original image coords
+    const scaleX = imgSize.w / imgSize.nw;
+    const scaleY = imgSize.h / imgSize.nh;
+    const x1 = Math.min(drawStart.x, drawEnd.x) * scaleX;
+    const y1 = Math.min(drawStart.y, drawEnd.y) * scaleY;
+    const x2 = Math.max(drawStart.x, drawEnd.x) * scaleX;
+    const y2 = Math.max(drawStart.y, drawEnd.y) * scaleY;
+    // face_box format: [top, right, bottom, left]
+    const box: [number, number, number, number] = [
+      Math.round(y1), Math.round(x2), Math.round(y2), Math.round(x1),
+    ];
+    setPendingFaceId(drawingFaceId);
     try {
-      if (assignedFaceIds.has(face.id)) {
-        await jobsApi.removeMatch(jobId, image.id, face.id);
-      } else {
-        await jobsApi.addMatch(jobId, image.id, face.id);
-      }
+      await jobsApi.addMatch(jobId, image.id, drawingFaceId, box);
       onAssignmentChange();
     } finally {
       setPendingFaceId(null);
+      setDrawingFaceId(null);
+      setDrawStart(null);
+      setDrawEnd(null);
+    }
+  };
+
+  const skipDrawBox = async () => {
+    if (!drawingFaceId) return;
+    setPendingFaceId(drawingFaceId);
+    try {
+      await jobsApi.addMatch(jobId, image.id, drawingFaceId);
+      onAssignmentChange();
+    } finally {
+      setPendingFaceId(null);
+      setDrawingFaceId(null);
+      setDrawStart(null);
+      setDrawEnd(null);
+    }
+  };
+
+  const cancelDrawBox = () => {
+    setDrawingFaceId(null);
+    setDrawStart(null);
+    setDrawEnd(null);
+  };
+
+  const handleToggle = async (face: UniqueFace) => {
+    if (pendingFaceId || drawingFaceId) return;
+    if (assignedFaceIds.has(face.id)) {
+      // Remove — immediate
+      setPendingFaceId(face.id);
+      try {
+        await jobsApi.removeMatch(jobId, image.id, face.id);
+        onAssignmentChange();
+      } finally {
+        setPendingFaceId(null);
+      }
+    } else {
+      // Add — enter draw-box mode
+      setDrawingFaceId(face.id);
+      setDrawStart(null);
+      setDrawEnd(null);
     }
   };
 
@@ -225,14 +320,41 @@ function PhotoPopup({
 
         <div className="relative inline-block self-center">
           <img ref={imgRef} src={`${BASE}${image.image_url}`} alt={image.filename}
-            className="max-h-[55vh] max-w-full rounded-xl object-contain shadow-2xl block" onLoad={handleImgLoad} />
+            className={`max-h-[55vh] max-w-full rounded-xl object-contain shadow-2xl block ${drawingFaceId ? "cursor-crosshair" : ""}`}
+            onLoad={handleImgLoad}
+            onMouseDown={handleDrawMouseDown}
+            onMouseMove={handleDrawMouseMove}
+            onMouseUp={handleDrawMouseUp}
+          />
           {showFaces && hasFaceBoxes && (
             <canvas ref={canvasRef} width={imgSize?.nw ?? 0} height={imgSize?.nh ?? 0}
               className="absolute inset-0 rounded-xl pointer-events-none" style={{ width: imgSize?.nw, height: imgSize?.nh }} />
           )}
+          {/* Drawing overlay canvas */}
+          {drawingFaceId && imgSize && (
+            <canvas ref={drawCanvasRef} width={imgSize.nw} height={imgSize.nh}
+              className="absolute inset-0 rounded-xl pointer-events-none" style={{ width: imgSize.nw, height: imgSize.nh }} />
+          )}
+
+          {/* Draw-box mode banner */}
+          {drawingFaceId && (
+            <div className="absolute top-3 left-1/2 -translate-x-1/2 flex items-center gap-2 px-4 py-2 rounded-xl bg-black/80 border border-brand-500/40 backdrop-blur shadow-lg">
+              <span className="text-xs text-brand-300 font-medium">
+                Draw a rectangle around the face, or
+              </span>
+              <button onClick={skipDrawBox}
+                className="px-2.5 py-1 rounded-lg text-xs font-medium bg-white/10 text-white hover:bg-white/20 transition-all">
+                Skip
+              </button>
+              <button onClick={cancelDrawBox}
+                className="px-2.5 py-1 rounded-lg text-xs font-medium text-slate-400 hover:text-white transition-all">
+                Cancel
+              </button>
+            </div>
+          )}
 
           {/* Floating edit button */}
-          {allFaces.length > 0 && !showAssign && (
+          {allFaces.length > 0 && !showAssign && !drawingFaceId && (
             <button onClick={() => setShowAssign(true)}
               className="absolute bottom-3 right-3 flex items-center gap-1.5 px-3 py-2 rounded-xl bg-brand-500 text-black text-xs font-semibold shadow-lg hover:bg-brand-400 transition-all">
               <Pencil className="w-3.5 h-3.5" />
