@@ -72,29 +72,36 @@ function FaceNameTag({
 
   if (editing) {
     return (
-      <input
-        ref={inputRef}
-        value={value}
-        onChange={(e) => setValue(e.target.value)}
-        onBlur={save}
-        onKeyDown={(e) => { if (e.key === "Enter") save(); if (e.key === "Escape") setEditing(false); }}
-        disabled={saving}
-        placeholder={`Person ${index + 1}`}
-        className={`bg-transparent border-b border-dashed outline-none text-center ${className ?? ""}`}
-        style={{ color, borderColor: `${color}60`, width: Math.max(60, value.length * 7 + 20) }}
-      />
+      <div className={`relative inline-block ${className ?? ""}`} style={{ minWidth: 80 }}>
+        <span className="opacity-15 select-none pointer-events-none block truncate" style={{ color }}>
+          {faceName(face, index)}
+        </span>
+        <input
+          ref={inputRef}
+          value={value}
+          onChange={(e) => setValue(e.target.value)}
+          onBlur={save}
+          onKeyDown={(e) => { if (e.key === "Enter") save(); if (e.key === "Escape") setEditing(false); }}
+          disabled={saving}
+          placeholder="Type a name..."
+          className="absolute inset-0 bg-dark-700/80 border border-brand-500/50 rounded-lg px-2 py-0.5 outline-none focus:border-brand-400 text-white placeholder:text-slate-600"
+          style={{ fontSize: "inherit", fontWeight: "inherit" }}
+        />
+      </div>
     );
   }
 
   return (
-    <button
-      onClick={(e) => { e.stopPropagation(); setEditing(true); setValue(face.name ?? ""); }}
-      className={`group/tag inline-flex items-center gap-0.5 hover:opacity-80 transition-opacity cursor-text ${className ?? ""}`}
-      title="Click to rename"
-    >
-      <span style={{ color }}>{faceName(face, index)}</span>
-      <Pencil className="w-2.5 h-2.5 opacity-0 group-hover/tag:opacity-60 transition-opacity" style={{ color }} />
-    </button>
+    <div className={`group/tag inline-flex items-center gap-1 ${className ?? ""}`}>
+      <span className="truncate" style={{ color }}>{faceName(face, index)}</span>
+      <button
+        onClick={(e) => { e.stopPropagation(); setEditing(true); setValue(face.name ?? ""); }}
+        className="shrink-0 opacity-0 group-hover/tag:opacity-60 hover:!opacity-100 transition-opacity p-0.5 cursor-pointer"
+        title="Rename"
+      >
+        <Pencil className="w-3 h-3" style={{ color }} />
+      </button>
+    </div>
   );
 }
 
@@ -113,6 +120,7 @@ function PhotoPopup({
 }) {
   const BASE = useSettingsStore((s) => s.httpBase());
   const [showFaces, setShowFaces] = useState(true);
+  const [showAssign, setShowAssign] = useState(false);
   const [imgSize, setImgSize] = useState<{ w: number; h: number; nw: number; nh: number } | null>(null);
   const [pendingFaceId, setPendingFaceId] = useState<string | null>(null);
   const imgRef = useRef<HTMLImageElement>(null);
@@ -222,47 +230,64 @@ function PhotoPopup({
             <canvas ref={canvasRef} width={imgSize?.nw ?? 0} height={imgSize?.nh ?? 0}
               className="absolute inset-0 rounded-xl pointer-events-none" style={{ width: imgSize?.nw, height: imgSize?.nh }} />
           )}
+
+          {/* Floating edit button */}
+          {allFaces.length > 0 && !showAssign && (
+            <button onClick={() => setShowAssign(true)}
+              className="absolute bottom-3 right-3 flex items-center gap-1.5 px-3 py-2 rounded-xl bg-brand-500 text-black text-xs font-semibold shadow-lg hover:bg-brand-400 transition-all">
+              <Pencil className="w-3.5 h-3.5" />
+              Edit Faces
+            </button>
+          )}
         </div>
 
-        {allFaces.length > 0 && (
-          <div className="rounded-xl bg-dark-800/90 border border-white/10 p-3 backdrop-blur">
-            <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">Assign faces</p>
-            <div className="flex gap-2 flex-wrap">
-              {allFaces.map((f, i) => {
-                const color = faceColorMap.get(f.id) ?? PERSON_COLORS[i % PERSON_COLORS.length];
-                const isAssigned = assignedFaceIds.has(f.id);
-                const isPending = pendingFaceId === f.id;
-                return (
-                  <button key={f.id} onClick={() => handleToggle(f)} disabled={!!pendingFaceId}
-                    className={`flex flex-col items-center gap-1 p-2 rounded-xl border transition-all select-none
-                      ${isAssigned ? "opacity-100" : "opacity-50 hover:opacity-80 bg-white/5 border-white/10"}
-                      ${isPending ? "cursor-wait" : "cursor-pointer"}`}
-                    style={isAssigned ? { background: `${color}18`, borderColor: `${color}55` } : {}}
-                  >
-                    <div className="relative">
-                      <div className="w-10 h-10 rounded-full overflow-hidden"
-                        style={{ boxShadow: isAssigned ? `0 0 0 2px ${color}` : "0 0 0 1px rgba(255,255,255,0.1)" }}>
-                        <img src={`${BASE}${f.face_image_url}`} alt="" className="w-full h-full object-cover" />
+        {/* Face assignment panel — shown after clicking Edit */}
+        <AnimatePresence>
+          {showAssign && allFaces.length > 0 && (
+            <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }} exit={{ opacity: 0, height: 0 }}
+              className="rounded-xl bg-dark-800/90 border border-white/10 p-3 backdrop-blur overflow-hidden">
+              <div className="flex items-center justify-between mb-2">
+                <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Assign faces</p>
+                <button onClick={() => setShowAssign(false)} className="text-slate-500 hover:text-white p-0.5">
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+              <div className="flex gap-2 flex-wrap">
+                {allFaces.map((f, i) => {
+                  const color = faceColorMap.get(f.id) ?? PERSON_COLORS[i % PERSON_COLORS.length];
+                  const isAssigned = assignedFaceIds.has(f.id);
+                  const isPending = pendingFaceId === f.id;
+                  return (
+                    <button key={f.id} onClick={() => handleToggle(f)} disabled={!!pendingFaceId}
+                      className={`flex flex-col items-center gap-1 p-2 rounded-xl border transition-all select-none
+                        ${isAssigned ? "opacity-100" : "opacity-50 hover:opacity-80 bg-white/5 border-white/10"}
+                        ${isPending ? "cursor-wait" : "cursor-pointer"}`}
+                      style={isAssigned ? { background: `${color}18`, borderColor: `${color}55` } : {}}
+                    >
+                      <div className="relative">
+                        <FaceAvatar src={`${BASE}${thumbUrl(f.face_image_url, 150)}`} size={40}
+                          className="rounded-full overflow-hidden"
+                          style={{ boxShadow: isAssigned ? `0 0 0 2px ${color}` : "0 0 0 1px rgba(255,255,255,0.1)" }} />
+                        {isPending && (
+                          <div className="absolute inset-0 rounded-full bg-black/60 flex items-center justify-center">
+                            <Loader2 className="w-3 h-3 animate-spin text-white" />
+                          </div>
+                        )}
+                        {isAssigned && !isPending && (
+                          <div className="absolute -top-0.5 -right-0.5 w-3.5 h-3.5 rounded-full flex items-center justify-center"
+                            style={{ background: color }}>
+                            <Check className="w-2 h-2 text-black" strokeWidth={3} />
+                          </div>
+                        )}
                       </div>
-                      {isPending && (
-                        <div className="absolute inset-0 rounded-full bg-black/60 flex items-center justify-center">
-                          <Loader2 className="w-3 h-3 animate-spin text-white" />
-                        </div>
-                      )}
-                      {isAssigned && !isPending && (
-                        <div className="absolute -top-0.5 -right-0.5 w-3.5 h-3.5 rounded-full flex items-center justify-center"
-                          style={{ background: color }}>
-                          <Check className="w-2 h-2 text-black" strokeWidth={3} />
-                        </div>
-                      )}
-                    </div>
-                    <span className="text-xs font-semibold truncate max-w-[64px]" style={{ color: isAssigned ? color : "#64748b" }}>{faceName(f, i)}</span>
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-        )}
+                      <span className="text-xs font-semibold truncate max-w-[64px]" style={{ color: isAssigned ? color : "#64748b" }}>{faceName(f, i)}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
       </motion.div>
     </motion.div>
   );
@@ -272,13 +297,14 @@ function PhotoPopup({
 // Lightbox                                                             //
 // ------------------------------------------------------------------ //
 function Lightbox({
-  images, index, onClose, onPrev, onNext,
+  images, index, onClose, onPrev, onNext, onEdit,
 }: {
   images: { url: string; name: string }[];
   index: number;
   onClose: () => void;
   onPrev: () => void;
   onNext: () => void;
+  onEdit?: () => void;
 }) {
   const BASE = useSettingsStore((s) => s.httpBase());
   return (
@@ -289,10 +315,19 @@ function Lightbox({
         <ChevronLeft className="w-7 h-7" />
       </button>
       <motion.div key={index} initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }}
-        onClick={(e) => e.stopPropagation()} className="max-w-4xl max-h-full">
+        onClick={(e) => e.stopPropagation()} className="relative max-w-4xl max-h-full">
         <img src={`${BASE}${images[index].url}`} alt={images[index].name}
           className="max-h-[85vh] max-w-full rounded-xl object-contain shadow-2xl" />
         <p className="text-center text-white/60 text-xs mt-2">{images[index].name} · {index + 1}/{images.length}</p>
+
+        {/* Floating edit button */}
+        {onEdit && (
+          <button onClick={(e) => { e.stopPropagation(); onEdit(); }}
+            className="absolute bottom-10 right-3 flex items-center gap-1.5 px-3 py-2 rounded-xl bg-brand-500 text-black text-xs font-semibold shadow-lg hover:bg-brand-400 transition-all">
+            <Pencil className="w-3.5 h-3.5" />
+            Edit Faces
+          </button>
+        )}
       </motion.div>
       <button onClick={(e) => { e.stopPropagation(); onNext(); }} className="absolute right-4 text-white/60 hover:text-white p-2">
         <ChevronRight className="w-7 h-7" />
@@ -304,9 +339,13 @@ function Lightbox({
 // ------------------------------------------------------------------ //
 // List View                                                            //
 // ------------------------------------------------------------------ //
-function ListView({ faces, faceColorMap, jobId, onRefetch }: { faces: UniqueFace[]; faceColorMap: Map<string, string>; jobId: string; onRefetch: () => void }) {
+function ListView({ faces, faceColorMap, jobId, onRefetch, allImages, allFaces }: {
+  faces: UniqueFace[]; faceColorMap: Map<string, string>; jobId: string; onRefetch: () => void;
+  allImages: ImageNode[]; allFaces: UniqueFace[];
+}) {
   const BASE = useSettingsStore((s) => s.httpBase());
   const [lightbox, setLightbox] = useState<{ faceIdx: number; imgIdx: number } | null>(null);
+  const [editImageId, setEditImageId] = useState<string | null>(null);
 
   return (
     <>
@@ -352,15 +391,30 @@ function ListView({ faces, faceColorMap, jobId, onRefetch }: { faces: UniqueFace
         })}
       </div>
       <AnimatePresence>
-        {lightbox !== null && (
-          <Lightbox
-            images={faces[lightbox.faceIdx].matches.map((m) => ({ url: m.image_url, name: m.filename }))}
-            index={lightbox.imgIdx}
-            onClose={() => setLightbox(null)}
-            onPrev={() => setLightbox((lb) => lb && { ...lb, imgIdx: (lb.imgIdx - 1 + faces[lb.faceIdx].matches.length) % faces[lb.faceIdx].matches.length })}
-            onNext={() => setLightbox((lb) => lb && { ...lb, imgIdx: (lb.imgIdx + 1) % faces[lb.faceIdx].matches.length })}
-          />
-        )}
+        {lightbox !== null && (() => {
+          const currentMatch = faces[lightbox.faceIdx].matches[lightbox.imgIdx];
+          return (
+            <Lightbox
+              images={faces[lightbox.faceIdx].matches.map((m) => ({ url: m.image_url, name: m.filename }))}
+              index={lightbox.imgIdx}
+              onClose={() => setLightbox(null)}
+              onPrev={() => setLightbox((lb) => lb && { ...lb, imgIdx: (lb.imgIdx - 1 + faces[lb.faceIdx].matches.length) % faces[lb.faceIdx].matches.length })}
+              onNext={() => setLightbox((lb) => lb && { ...lb, imgIdx: (lb.imgIdx + 1) % faces[lb.faceIdx].matches.length })}
+              onEdit={() => { setEditImageId(currentMatch.image_id); setLightbox(null); }}
+            />
+          );
+        })()}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {editImageId && (() => {
+          const img = allImages.find((im) => im.id === editImageId);
+          if (!img) return null;
+          return (
+            <PhotoPopup image={img} allFaces={allFaces} jobId={jobId}
+              faceColorMap={faceColorMap} onClose={() => setEditImageId(null)} onAssignmentChange={onRefetch} />
+          );
+        })()}
       </AnimatePresence>
     </>
   );
@@ -561,6 +615,31 @@ function FacesManagerModal({
   const [mergePrimaryId, setMergePrimaryId] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editValue, setEditValue] = useState("");
+  const [saving, setSaving] = useState(false);
+  const editRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => { if (editingId) editRef.current?.focus(); }, [editingId]);
+
+  const startRename = (face: UniqueFace, idx: number) => {
+    setEditingId(face.id);
+    setEditValue(face.name ?? "");
+  };
+
+  const saveRename = async () => {
+    if (!editingId) return;
+    setSaving(true);
+    try {
+      await jobsApi.renameFace(jobId, editingId, editValue);
+      onDone();
+    } finally {
+      setSaving(false);
+      setEditingId(null);
+    }
+  };
+
+  const cancelRename = () => { setEditingId(null); };
 
   const toggle = (id: string) => {
     setSelection((prev) => {
@@ -701,11 +780,34 @@ function FacesManagerModal({
                     className="rounded-full overflow-hidden shrink-0"
                     style={{ boxShadow: isPrimary ? `0 0 0 3px ${color}` : `0 0 0 1px ${isDisabled ? "rgba(255,255,255,0.05)" : color + "40"}` }} />
 
-                  {/* Info */}
+                  {/* Info + inline rename */}
                   <div className="flex-1 min-w-0">
-                    <span className="text-sm font-semibold truncate block" style={{ color: isDisabled ? "#475569" : color }}>
-                      {faceName(face, i)}
-                    </span>
+                    {editingId === face.id ? (
+                      <div className="relative">
+                        <span className="text-sm font-semibold opacity-15 block truncate select-none pointer-events-none" style={{ color }}>
+                          {faceName(face, i)}
+                        </span>
+                        <input ref={editRef} value={editValue}
+                          onChange={(e) => setEditValue(e.target.value)}
+                          onBlur={saveRename}
+                          onKeyDown={(e) => { if (e.key === "Enter") saveRename(); if (e.key === "Escape") cancelRename(); }}
+                          disabled={saving}
+                          placeholder="Type a name..."
+                          className="absolute inset-0 text-sm font-semibold bg-dark-700/80 border border-brand-500/50 rounded-lg px-2 py-0.5 outline-none focus:border-brand-400 text-white w-full placeholder:text-slate-600"
+                        />
+                      </div>
+                    ) : (
+                      <div className="flex items-center gap-1.5 group/name">
+                        <span className="text-sm font-semibold truncate" style={{ color: isDisabled ? "#475569" : color }}>
+                          {faceName(face, i)}
+                        </span>
+                        <button onClick={() => startRename(face, i)}
+                          className="shrink-0 opacity-0 group-hover/name:opacity-60 hover:!opacity-100 transition-opacity p-0.5"
+                          title="Rename">
+                          <Pencil className="w-3 h-3" style={{ color }} />
+                        </button>
+                      </div>
+                    )}
                     <span className="text-xs text-slate-500">
                       {face.matches.length} photos{isDisabled ? " · disabled" : ""}
                       {hasGroup ? ` · ${face.group_members.length + 1} grouped` : ""}
@@ -1542,7 +1644,8 @@ export default function ResultsPage() {
             <>
               {view === "list" ? (
                 <div className="h-full overflow-y-auto">
-                  <ListView faces={faces} faceColorMap={faceColorMap} jobId={jobId!} onRefetch={refetch} />
+                  <ListView faces={faces} faceColorMap={faceColorMap} jobId={jobId!} onRefetch={refetch}
+                    allImages={images} allFaces={allFaces} />
 
                   {/* Undetected images (list view) */}
                   {undetectedImages.length > 0 && (
