@@ -1,41 +1,63 @@
 # Face Gallery
 
-A web application for automatically detecting, grouping, and organizing images by the faces that appear in them — with an interactive graph to visualize relationships.
+An open-source web application for automatically detecting, grouping, and organizing photos by the faces that appear in them. Visualize face-to-photo relationships in an interactive graph, manage faces with merge/rename/disable, and fine-tune detection settings through a polished dark UI.
 
 > Demo videos and screenshots coming soon.
 
 ---
 
-## What it does
+## Features
 
-Upload a batch of photos (or a ZIP archive) and Face Gallery will:
+### Core
+- Upload photos or ZIP archives with drag-and-drop
+- Two-step ML pipeline: detect unique faces, then sort all photos by person
+- Real-time processing progress via WebSocket
+- Results in **List View** (face cards with photo grids) and **Graph View** (interactive node network)
 
-1. **Detect unique faces** across all images using facial encodings
-2. **Group images by person** — every image lands in the folder of the face(s) it contains
-3. **Show results** in a searchable list or an interactive node graph
-4. **Let you correct mistakes** — manually assign or remove face-to-image associations
+### Graph Visualization
+- **Square layout** — photos in a grid, faces distributed evenly on all 4 sides
+- **Radial layout** — photos packed in a spiral, faces on the outer ring
+- Face-to-photo connection lines with hover highlighting
+- Drag, zoom, pan, fullscreen, and minimap
+- Double-click any photo to manage face assignments
 
-Processing runs in the background with real-time progress streamed over WebSocket. You can pause, resume, or stop a job at any time.
+### Face Management
+- **Faces Manager** dialog — bulk select, merge, disable, enable, delete faces
+- **Reversible merge** — faces are grouped (not deleted), can be ungrouped or have their display photo changed at any time
+- **Rename/tag** faces inline with click-to-edit
+- **Disable** faces to hide them from results without deleting
+- **Hover preview** on all face avatars and photo thumbnails (enlarged popup)
+
+### Manual Face Assignment
+- Click "Edit Faces" on any photo to add or remove face associations
+- **Draw bounding box** — when adding a face, draw a rectangle on the image to mark the face location
+- Skip drawing to assign without a box
+
+### Performance
+- **Server-side thumbnails** — on-the-fly JPEG thumbnail generation with disk caching
+- **Granular visual effects** — toggle edge animations, glow, shadows, hover effects, transitions, and minimap independently
+- Smart recommendation after processing 30+ images to disable heavy effects
+- All grid/list views use thumbnails; full-res only loaded on demand
+
+### Session Management
+- Add more images to existing sessions and re-process
+- Cancel and delete sessions (removes all data and files)
+- Configurable backend URL with connection test
+- **Processing settings** — adjust face crop padding (with live preview) and match tolerance before processing
 
 ---
 
-## Screenshots & Demo
-
-> _Demo videos and sample images will be added here soon._
-
----
-
-## Tech stack
+## Tech Stack
 
 | Layer | Technology |
 |---|---|
 | Frontend | React 19, TypeScript, Vite, Tailwind CSS |
 | State | Zustand + TanStack React Query |
-| Graph UI | @xyflow/react |
+| Graph | @xyflow/react (ReactFlow) |
 | Animation | Framer Motion |
 | Backend | Python 3.12, FastAPI, Uvicorn |
 | Database | SQLite + SQLAlchemy |
-| Face ML | `face_recognition` (dlib), OpenCV |
+| Face ML | face_recognition (dlib), OpenCV |
 | Realtime | WebSocket |
 
 ---
@@ -44,9 +66,9 @@ Processing runs in the background with real-time progress streamed over WebSocke
 
 - **Python 3.10+**
 - **Node.js 18+** and npm
-- **CMake** and a C++ compiler (required to build `dlib` / `face_recognition`)
+- **CMake** and a C++ compiler (required to build dlib)
 
-### Installing dlib dependencies
+### Installing dlib build dependencies
 
 **Ubuntu / Debian**
 ```bash
@@ -65,7 +87,7 @@ Install [CMake](https://cmake.org/download/) and [Visual Studio Build Tools](htt
 
 ---
 
-## Installation
+## Quick Start
 
 ### 1. Clone the repo
 
@@ -74,12 +96,12 @@ git clone https://github.com/mrbeandev/Face-Gallery.git
 cd Face-Gallery
 ```
 
-### 2. Backend
+### 2. Start the backend
 
 ```bash
 cd face-detection-webapp/backend
 
-# Create a virtual environment
+# Create and activate a virtual environment
 python3 -m venv venv
 source venv/bin/activate        # macOS / Linux
 # venv\Scripts\activate         # Windows
@@ -93,7 +115,7 @@ uvicorn main:app --reload --host 0.0.0.0 --port 8000
 
 The API is now running at `http://localhost:8000`.
 
-### 3. Frontend
+### 3. Start the frontend
 
 Open a second terminal:
 
@@ -106,24 +128,31 @@ npm run dev
 
 The app is now running at `http://localhost:5173`.
 
-> The Vite dev server automatically proxies `/api` and `/ws` requests to the backend, so no extra config is needed during development.
+### 4. Connect
+
+Open `http://localhost:5173` in your browser. On first launch you'll be prompted to enter the backend URL (defaults to `http://localhost:8000`). Click **Test & Connect** to verify.
+
+> The Vite dev server proxies `/api`, `/ws`, `/thumb`, and `/static` requests to the backend automatically.
 
 ---
 
 ## Usage
 
-1. Open `http://localhost:5173` in your browser.
-2. Drag and drop images (`.jpg`, `.png`, `.webp`, and more) or a `.zip` archive onto the upload area.
-3. Click **Start Processing**. Watch the real-time progress as faces are detected and images are grouped.
-4. When complete, switch to **Results** to browse faces and their matched images.
-5. Toggle **Graph View** to explore relationships visually.
-6. Click any face or image to manually adjust assignments.
+1. **Upload** — drag and drop images or a ZIP archive onto the upload area
+2. **Configure** — click "Processing Settings" below the upload button to adjust crop padding and match tolerance
+3. **Process** — photos are uploaded and processing starts automatically. Watch real-time progress with live face discovery
+4. **Results** — browse detected faces in List or Graph view
+5. **Manage faces** — click "Faces" in the header to rename, merge, disable, delete, or change display photos
+6. **Edit assignments** — click "Edit Faces" on any photo to add/remove faces with optional bounding box drawing
+7. **Filter** — in Graph view, open the Filter panel to show/hide specific faces, toggle between gray-out and hide modes
+8. **Add images** — click "+ Add Images" to upload more photos to an existing session and re-process
+9. **Effects** — click "Effects" in the sidebar to toggle visual effects for performance tuning
 
 ---
 
-## Standalone scripts
+## Standalone Scripts
 
-If you only need the core batch-processing logic without the web UI, two standalone scripts are included at the root of the repo:
+For batch processing without the web UI:
 
 | Script | Purpose |
 |---|---|
@@ -131,91 +160,120 @@ If you only need the core batch-processing logic without the web UI, two standal
 | `part2.py` | Copy images from `input/` into `sorted_by_face/{id}/` folders |
 
 ```bash
-# Install dependencies
 pip install -r requirements.txt
-
-# Drop your photos into input/, then:
-python part1.py   # find unique faces
-python part2.py   # sort images by face
+# Drop photos into input/, then:
+python part1.py
+python part2.py
 ```
-
-See `INSTRUCTIONS.TXT` for more details.
 
 ---
 
-## Project structure
+## Project Structure
 
 ```
 Face-Gallery/
-├── part1.py                        # Standalone: extract unique faces
-├── part2.py                        # Standalone: sort images by face
-├── requirements.txt                # Standalone script dependencies
-├── input/                          # Input folder for standalone scripts
-├── UNIQUE/                         # Output: unique face crops
-├── sorted_by_face/                 # Output: images grouped by person
-├── INSTRUCTIONS.TXT                # Standalone usage guide
+├── part1.py                            # Standalone face extraction
+├── part2.py                            # Standalone photo sorting
+├── requirements.txt                    # Standalone dependencies
 │
 └── face-detection-webapp/
     ├── backend/
-    │   ├── main.py                 # FastAPI application & CORS setup
-    │   ├── database.py             # SQLAlchemy models
-    │   ├── processing.py           # Background ML pipeline (FaceProcessor)
-    │   ├── schemas.py              # Pydantic response schemas
-    │   ├── requirements.txt        # Python dependencies
+    │   ├── main.py                     # FastAPI app, CORS, thumbnails, settings
+    │   ├── database.py                 # SQLAlchemy models + migrations
+    │   ├── processing.py               # Background ML pipeline
+    │   ├── schemas.py                  # Pydantic response schemas
+    │   ├── requirements.txt            # Python dependencies
     │   └── routers/
-    │       ├── jobs.py             # REST endpoints
-    │       └── ws.py               # WebSocket endpoint
+    │       ├── jobs.py                 # REST endpoints (upload, process, faces, merge, etc.)
+    │       └── ws.py                   # WebSocket progress streaming
     │
     └── frontend/
+        ├── public/
+        │   └── face-sample.png         # Sample face for settings preview
         ├── src/
-        │   ├── pages/
-        │   │   ├── Upload.tsx      # Upload & job history
-        │   │   ├── Processing.tsx  # Live progress view
-        │   │   └── Results.tsx     # Face list + graph view
+        │   ├── App.tsx                 # Router + layout wrapper
+        │   ├── api/client.ts           # Axios API client with dynamic base URL
         │   ├── components/
-        │   ├── hooks/
-        │   ├── store/              # Zustand global state
-        │   └── types.ts
+        │   │   ├── BackendSetup.tsx     # Backend URL configuration modal
+        │   │   ├── EffectsDialog.tsx    # Granular visual effects toggles
+        │   │   ├── Layout.tsx          # Sidebar, header, resizable panels
+        │   │   └── SettingsPopover.tsx  # Crop padding + tolerance settings
+        │   ├── hooks/useJobWS.ts       # WebSocket hook
+        │   ├── pages/
+        │   │   ├── Upload.tsx          # Upload + settings
+        │   │   ├── Processing.tsx      # Live progress + cancel
+        │   │   └── Results.tsx         # List/Graph views, face management
+        │   ├── store/
+        │   │   ├── jobStore.ts         # Processing state
+        │   │   └── settingsStore.ts    # Backend URL + effects config
+        │   └── types.ts                # WebSocket event types
         ├── package.json
-        └── vite.config.ts
+        ├── vite.config.ts
+        └── tailwind.config.js
 ```
 
 ---
 
-## API overview
+## API Reference
+
+### Jobs
 
 | Method | Endpoint | Description |
 |---|---|---|
-| `POST` | `/api/jobs/upload` | Upload images or a ZIP archive |
+| `POST` | `/api/jobs/upload` | Upload images or ZIP, create new job |
+| `POST` | `/api/jobs/{id}/add-images` | Add more images to existing job |
 | `GET` | `/api/jobs` | List recent jobs |
 | `GET` | `/api/jobs/{id}` | Get job details |
 | `POST` | `/api/jobs/{id}/start` | Start processing |
-| `POST` | `/api/jobs/{id}/pause` | Pause / resume |
 | `POST` | `/api/jobs/{id}/stop` | Stop processing |
-| `GET` | `/api/jobs/{id}/results` | Fetch results |
-| `POST` | `/api/jobs/{id}/images/{img_id}/faces/{face_id}` | Manually assign a face |
-| `DELETE` | `/api/jobs/{id}/images/{img_id}/faces/{face_id}` | Remove a face assignment |
-| `WS` | `/ws/{id}` | Real-time progress stream |
+| `DELETE` | `/api/jobs/{id}` | Delete job and all data |
+| `GET` | `/api/jobs/{id}/results` | Get results (list + graph data) |
+
+### Face Management
+
+| Method | Endpoint | Description |
+|---|---|---|
+| `PATCH` | `/api/jobs/{id}/faces/{faceId}` | Rename a face |
+| `POST` | `/api/jobs/{id}/faces/merge` | Group faces (reversible merge) |
+| `POST` | `/api/jobs/{id}/faces/{faceId}/ungroup` | Remove face from group |
+| `POST` | `/api/jobs/{id}/faces/group/{groupId}/set-primary` | Change group display face |
+| `POST` | `/api/jobs/{id}/faces/{faceId}/disable` | Toggle face disabled state |
+| `DELETE` | `/api/jobs/{id}/faces/{faceId}` | Permanently delete a face |
+
+### Image-Face Assignment
+
+| Method | Endpoint | Description |
+|---|---|---|
+| `POST` | `/api/jobs/{id}/images/{imgId}/faces/{faceId}` | Assign face to image (with optional bounding box) |
+| `DELETE` | `/api/jobs/{id}/images/{imgId}/faces/{faceId}` | Remove face from image |
+
+### Other
+
+| Method | Endpoint | Description |
+|---|---|---|
+| `WS` | `/ws/{id}` | Real-time processing progress |
+| `GET` | `/thumb/{path}?size=200` | On-the-fly thumbnail generation |
+| `GET` | `/api/settings` | Get processing settings |
+| `PUT` | `/api/settings` | Update crop padding / tolerance |
 | `GET` | `/health` | Health check |
 
 ---
 
 ## Configuration
 
-All configuration lives directly in source files — no `.env` required for basic usage.
+Settings are configurable at runtime through the UI. No `.env` file required.
 
-| Setting | Location | Default | Description |
+| Setting | Where to change | Default | Description |
 |---|---|---|---|
-| `TOLERANCE` | `backend/processing.py` | `0.5` | Face matching strictness. Lower = stricter. |
-| Backend port | startup command | `8000` | Change with `--port` |
-| Frontend port | `vite.config.ts` | `5173` | Change with `--port` |
+| Backend URL | Sidebar footer or first-launch dialog | `http://localhost:8000` | Backend API endpoint |
+| Face Crop Padding | Upload page > Processing Settings | 45% | Extra space around detected faces when cropping |
+| Match Tolerance | Upload page > Processing Settings | 0.50 | Face matching strictness (lower = stricter) |
+| Visual Effects | Sidebar > Effects | All on | Toggle animations, glow, shadows, hover, minimap |
 | CORS origins | `backend/main.py` | `localhost:5173` | Add origins for production |
 
 ---
 
-## Production deployment
-
-For production, build the frontend and serve it as static files alongside the backend:
+## Production Deployment
 
 ```bash
 # Build the frontend
@@ -228,7 +286,7 @@ pip install gunicorn
 gunicorn main:app -w 4 -k uvicorn.workers.UvicornWorker --bind 0.0.0.0:8000
 ```
 
-Then point your reverse proxy (nginx, Caddy, etc.) at port 8000 and serve the `frontend/dist/` folder as static files.
+Point your reverse proxy (nginx, Caddy, etc.) at port 8000 and serve `frontend/dist/` as static files. Remember to update CORS origins in `main.py` for your domain.
 
 ---
 
@@ -245,4 +303,4 @@ Contributions, bug reports, and feature requests are welcome. Please open an iss
 
 ## License
 
-MIT — see [LICENSE](LICENSE) for details.
+MIT -- see [LICENSE](LICENSE) for details.

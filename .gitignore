@@ -22,6 +22,7 @@ sorted_by_face/
 
 # Images (sample data)
 *.png
+!face-detection-webapp/frontend/public/face-sample.png
 *.jpg
 *.jpeg
 *.gif
