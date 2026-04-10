@@ -2,7 +2,9 @@
 
 An open-source web application for automatically detecting, grouping, and organizing photos by the faces that appear in them. Visualize face-to-photo relationships in an interactive graph, manage faces with merge/rename/disable, and fine-tune detection settings through a polished dark UI.
 
-> Demo videos and screenshots coming soon.
+![Face Gallery Demo](face-detection-webapp/frontend/public/demo-thumbnail.jpg)
+
+[Watch the full demo video on Google Drive](https://drive.google.com/file/d/10Zpq7wDfBluFL_LMdAKPqhTmfBKu4r5d/view?usp=sharing)
 
 ---
 
