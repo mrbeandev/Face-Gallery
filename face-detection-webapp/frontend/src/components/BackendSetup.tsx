@@ -8,6 +8,7 @@ export default function BackendSetup({ onDone }: { onDone: () => void }) {
   const [url, setUrl] = useState("http://localhost:8000");
   const [testing, setTesting] = useState(false);
   const [result, setResult] = useState<"ok" | "fail" | null>(null);
+  const [showHelp, setShowHelp] = useState(false);
 
   const test = async () => {
     setTesting(true);
@@ -37,13 +38,13 @@ export default function BackendSetup({ onDone }: { onDone: () => void }) {
   return (
     <motion.div
       initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-      className="fixed inset-0 z-[100] bg-dark-900/95 backdrop-blur-xl flex items-center justify-center p-4"
+      className="fixed inset-0 z-[100] overflow-y-auto bg-dark-900/95 backdrop-blur-xl flex items-center justify-center p-4"
     >
       <motion.div
         initial={{ scale: 0.92, opacity: 0, y: 20 }}
         animate={{ scale: 1, opacity: 1, y: 0 }}
         transition={{ type: "spring", damping: 25 }}
-        className="w-full max-w-md rounded-2xl bg-dark-800 border border-white/10 p-8 shadow-2xl"
+        className="my-auto w-full max-w-md min-w-0 rounded-2xl bg-dark-800 border border-white/10 p-8 shadow-2xl"
       >
         <div className="flex items-center gap-3 mb-6">
           <div className="p-3 rounded-xl bg-brand-500/10 border border-brand-500/20">
@@ -56,6 +57,58 @@ export default function BackendSetup({ onDone }: { onDone: () => void }) {
         </div>
 
         <div className="space-y-4">
+          <p className="text-sm text-slate-400">
+            Face Gallery needs a backend running on your own machine. Your photos stay there.
+          </p>
+
+          <div className="rounded-xl bg-dark-700 border border-white/10">
+            <button
+              type="button"
+              onClick={() => setShowHelp((visible) => !visible)}
+              aria-expanded={showHelp}
+              className="w-full px-4 py-3 text-left text-sm font-medium text-brand-400"
+            >
+              How do I start one?
+            </button>
+            <AnimatePresence initial={false}>
+              {showHelp && (
+                <motion.div
+                  initial={{ opacity: 0, height: 0 }}
+                  animate={{ opacity: 1, height: "auto" }}
+                  exit={{ opacity: 0, height: 0 }}
+                  className="overflow-hidden"
+                >
+                  <div className="border-t border-white/10 px-4 pb-4 pt-3">
+                    <pre className="max-w-full overflow-x-auto whitespace-pre-wrap break-words rounded-lg bg-dark-800 p-3 text-xs leading-relaxed text-slate-400"><code>{[
+                      "git clone https://github.com/mrbeandev/Face-Gallery.git",
+                      "cd Face-Gallery/face-detection-webapp/backend",
+                      "python3 -m venv .venv",
+                      "source .venv/bin/activate",
+                      "pip install -r requirements.txt",
+                      "uvicorn main:app --port 8000",
+                    ].join("\n")}</code></pre>
+                    <p className="mt-3 text-xs text-slate-400">
+                      Then use <span className="font-mono text-slate-300">http://localhost:8000</span> in this dialog.
+                    </p>
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </div>
+
+          <a
+            href="https://github.com/mrbeandev/Face-Gallery#running-your-own-backend"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="block text-sm text-brand-400 transition-colors hover:text-brand-300"
+          >
+            Full setup instructions
+          </a>
+
+          <p className="text-xs text-slate-400">
+            Safari cannot connect to a local backend. Use Chrome, Edge, or Firefox 84+.
+          </p>
+
           <div>
             <label className="text-xs font-medium text-slate-400 uppercase tracking-wider mb-2 block">
               Backend URL
@@ -84,7 +137,7 @@ export default function BackendSetup({ onDone }: { onDone: () => void }) {
                 initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }} exit={{ opacity: 0, height: 0 }}
                 className="flex items-center gap-2 px-3 py-2 rounded-lg bg-red-500/10 border border-red-500/20">
                 <XCircle className="w-4 h-4 text-red-400" />
-                <span className="text-sm text-red-300">Could not connect. Check the URL and ensure the backend is running.</span>
+                <span className="text-sm text-red-300">Could not connect. Make sure the backend is running and the URL is correct.</span>
               </motion.div>
             )}
           </AnimatePresence>
