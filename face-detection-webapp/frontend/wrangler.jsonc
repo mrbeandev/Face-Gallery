@@ -1,0 +1,13 @@
+{
+  // Static-only Worker: no `main` entrypoint, just the built assets.
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "face-gallery",
+  "compatibility_date": "2026-08-23",
+  "assets": {
+    "directory": "./dist",
+    // The app uses BrowserRouter, so /results/:jobId and /processing/:jobId
+    // exist only in the bundle. Serve index.html for anything that is not a
+    // real file, or a refresh on those routes 404s.
+    "not_found_handling": "single-page-application"
+  }
+}
