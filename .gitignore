@@ -49,3 +49,7 @@ Thumbs.db
 *.swp
 *E.md
 docs/
+
+# PyInstaller output (the executable is ~205 MB)
+face-detection-webapp/backend/build/
+face-detection-webapp/backend/dist/
