@@ -1,4 +1,5 @@
 import { motion } from "framer-motion";
+import { createPortal } from "react-dom";
 import {
   X, Sparkles, Wind, Lightbulb, MousePointer2, Map, ArrowRightLeft,
 } from "lucide-react";
@@ -69,7 +70,10 @@ export default function EffectsDialog({ onClose }: { onClose: () => void }) {
   const allOn = Object.values(effects).every(Boolean);
   const allOff = Object.values(effects).every((v) => !v);
 
-  return (
+  if (typeof document === "undefined") return null;
+
+  return createPortal(
+    (
     <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
       className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-4" onClick={onClose}>
       <motion.div initial={{ scale: 0.92, opacity: 0, y: 10 }} animate={{ scale: 1, opacity: 1, y: 0 }}
@@ -140,5 +144,7 @@ export default function EffectsDialog({ onClose }: { onClose: () => void }) {
         </div>
       </motion.div>
     </motion.div>
+    ),
+    document.body,
   );
 }

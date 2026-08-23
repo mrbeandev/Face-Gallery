@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { createPortal } from "react-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import { Server, Loader2, CheckCircle2, XCircle } from "lucide-react";
 import { useSettingsStore } from "../store/settingsStore";
@@ -35,7 +36,10 @@ export default function BackendSetup({ onDone }: { onDone: () => void }) {
     onDone();
   };
 
-  return (
+  if (typeof document === "undefined") return null;
+
+  return createPortal(
+    (
     <motion.div
       initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
       className="fixed inset-0 z-[100] overflow-y-auto bg-dark-900/95 backdrop-blur-xl flex items-center justify-center p-4"
@@ -157,5 +161,7 @@ export default function BackendSetup({ onDone }: { onDone: () => void }) {
         </div>
       </motion.div>
     </motion.div>
+    ),
+    document.body,
   );
 }
