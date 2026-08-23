@@ -4,7 +4,7 @@
     {
       "label": "Backend: Start Server",
       "type": "shell",
-      "command": "venv/bin/uvicorn main:app --reload --port 8000",
+      "command": ".venv/bin/uvicorn main:app --reload --port 8000",
       "options": {
         "cwd": "${workspaceFolder}/face-detection-webapp/backend"
       },
