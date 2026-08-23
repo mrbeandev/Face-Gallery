@@ -101,7 +101,7 @@ export default function BackendSetup({ onDone }: { onDone: () => void }) {
           </div>
 
           <a
-            href="https://github.com/mrbeandev/Face-Gallery#running-your-own-backend"
+            href="https://github.com/mrbeandev/Face-Gallery/wiki/Running-Your-Own-Backend"
             target="_blank"
             rel="noopener noreferrer"
             className="block text-sm text-brand-400 transition-colors hover:text-brand-300"
