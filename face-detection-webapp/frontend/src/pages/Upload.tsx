@@ -3,7 +3,7 @@ import { useDropzone } from "react-dropzone";
 import { useNavigate } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import {
-  Upload, X, ImageIcon, FileArchive, AlertTriangle,
+  Upload, X, FileArchive, AlertTriangle,
   Loader2, ScanFace, Settings,
 } from "lucide-react";
 import { jobsApi } from "../api/client";
@@ -79,38 +79,42 @@ export default function UploadPage() {
       </motion.div>
 
       <div className="w-full max-w-lg space-y-3">
-        {/* Drop zone */}
-        <motion.div
-          initial={{ opacity: 0, scale: 0.97 }}
-          animate={{ opacity: 1, scale: 1 }}
-          {...getRootProps()}
-          className={`relative rounded-2xl border-2 border-dashed p-8 cursor-pointer transition-all duration-300 text-center
-            ${isDragActive
-              ? "border-brand-400 bg-brand-500/5 scale-[1.01]"
-              : "border-white/10 hover:border-white/20 bg-dark-800/50 hover:bg-dark-800"
-            }`}
-        >
-          <input {...getInputProps()} />
-          <div className="flex flex-col items-center gap-3">
-            <motion.div
-              animate={{ scale: isDragActive ? 1.15 : 1 }}
-              transition={{ type: "spring", stiffness: 300 }}
-              className={`p-4 rounded-xl transition-colors ${isDragActive ? "bg-brand-500/20" : "bg-white/5"}`}
-            >
-              <Upload className={`w-8 h-8 ${isDragActive ? "text-brand-400" : "text-slate-400"}`} />
-            </motion.div>
-            <div>
-              <p className="text-lg font-semibold text-white mb-0.5">
-                {isDragActive ? "Drop files here" : "Drag & drop files"}
-              </p>
-              <p className="text-slate-500 text-sm">or click to browse</p>
-            </div>
-            <div className="flex gap-2 flex-wrap justify-center">
-              {["JPG", "PNG", "WEBP", "ZIP"].map((ext) => (
-                <span key={ext} className="px-2 py-0.5 rounded-md bg-white/5 border border-white/10 text-xs text-slate-500 font-mono">
-                  .{ext.toLowerCase()}
-                </span>
-              ))}
+        {/* Drop zone. getRootProps() is typed as a generic bag of DOM handlers,
+            several of which (onAnimationStart, onDrag*) collide with the
+            same-named framer-motion props, so it cannot be spread onto a
+            motion component. Keep the dropzone root a plain div and let the
+            wrapper do the entrance animation. */}
+        <motion.div initial={{ opacity: 0, scale: 0.97 }} animate={{ opacity: 1, scale: 1 }}>
+          <div
+            {...getRootProps()}
+            className={`relative rounded-2xl border-2 border-dashed p-8 cursor-pointer transition-all duration-300 text-center
+              ${isDragActive
+                ? "border-brand-400 bg-brand-500/5 scale-[1.01]"
+                : "border-white/10 hover:border-white/20 bg-dark-800/50 hover:bg-dark-800"
+              }`}
+          >
+            <input {...getInputProps()} />
+            <div className="flex flex-col items-center gap-3">
+              <motion.div
+                animate={{ scale: isDragActive ? 1.15 : 1 }}
+                transition={{ type: "spring", stiffness: 300 }}
+                className={`p-4 rounded-xl transition-colors ${isDragActive ? "bg-brand-500/20" : "bg-white/5"}`}
+              >
+                <Upload className={`w-8 h-8 ${isDragActive ? "text-brand-400" : "text-slate-400"}`} />
+              </motion.div>
+              <div>
+                <p className="text-lg font-semibold text-white mb-0.5">
+                  {isDragActive ? "Drop files here" : "Drag & drop files"}
+                </p>
+                <p className="text-slate-500 text-sm">or click to browse</p>
+              </div>
+              <div className="flex gap-2 flex-wrap justify-center">
+                {["JPG", "PNG", "WEBP", "ZIP"].map((ext) => (
+                  <span key={ext} className="px-2 py-0.5 rounded-md bg-white/5 border border-white/10 text-xs text-slate-500 font-mono">
+                    .{ext.toLowerCase()}
+                  </span>
+                ))}
+              </div>
             </div>
           </div>
         </motion.div>

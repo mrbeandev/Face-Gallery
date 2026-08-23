@@ -5,7 +5,7 @@ import { AnimatePresence, motion } from "framer-motion";
 import {
   ScanFace, Upload, Menu, X, Server, Clock,
   CheckCircle2, XCircle, Pause, Loader2, ImageIcon,
-  ChevronRight, Settings, GripVertical, Trash2, Zap,
+  Settings, GripVertical, Trash2, Zap,
 } from "lucide-react";
 import { useSettingsStore } from "../store/settingsStore";
 import { jobsApi, type JobSummary } from "../api/client";

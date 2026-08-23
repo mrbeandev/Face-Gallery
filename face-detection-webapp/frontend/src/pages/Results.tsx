@@ -15,7 +15,7 @@ import {
   Loader2, ChevronLeft, ChevronRight, Eye, EyeOff,
   Maximize2, Minimize2, Check, AlertCircle, ChevronDown, RotateCcw,
   Filter, CheckSquare, Square, EyeOff as EyeOffIcon, Pencil, GitMerge as Merge,
-  Ban, Trash2, Plus, Upload, FileArchive, Grid3X3, Circle, Unlink,
+  Ban, Trash2, Plus, Grid3X3, Circle, Unlink,
 } from "lucide-react";
 import { jobsApi, type UniqueFace, type ImageNode } from "../api/client";
 import { useSettingsStore, type EffectsConfig } from "../store/settingsStore";
@@ -474,7 +474,6 @@ function ListView({ faces, faceColorMap, jobId, onRefetch, allImages, allFaces }
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4 p-4">
         {faces.map((face, fi) => {
           const color = faceColorMap.get(face.id) ?? PERSON_COLORS[fi % PERSON_COLORS.length];
-          const images = face.matches.map((m) => ({ url: m.image_url, name: m.filename }));
           return (
             <motion.div key={face.id} initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }}
               transition={{ delay: fi * 0.04 }} className="card flex flex-col">
@@ -744,7 +743,7 @@ function FacesManagerModal({
 
   useEffect(() => { if (editingId) editRef.current?.focus(); }, [editingId]);
 
-  const startRename = (face: UniqueFace, idx: number) => {
+  const startRename = (face: UniqueFace) => {
     setEditingId(face.id);
     setEditValue(face.name ?? "");
   };
@@ -923,7 +922,7 @@ function FacesManagerModal({
                         <span className="text-sm font-semibold truncate" style={{ color: isDisabled ? "#475569" : color }}>
                           {faceName(face, i)}
                         </span>
-                        <button onClick={() => startRename(face, i)}
+                        <button onClick={() => startRename(face)}
                           className="shrink-0 opacity-0 group-hover/name:opacity-60 hover:!opacity-100 transition-opacity p-0.5"
                           title="Rename">
                           <Pencil className="w-3 h-3" style={{ color }} />
