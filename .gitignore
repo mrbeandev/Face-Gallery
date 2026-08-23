@@ -47,3 +47,5 @@ Thumbs.db
 .vscode/
 .idea/
 *.swp
+*E.md
+docs/
