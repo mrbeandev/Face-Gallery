@@ -1,0 +1,92 @@
+name: Release executables
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Tag to create or update the release for
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build ${{ matrix.asset }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-latest
+            asset: FaceGallery-linux-x86_64
+          - runner: macos-latest
+            asset: FaceGallery-macos-arm64
+          - runner: windows-latest
+            asset: FaceGallery-windows-x86_64.exe
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4.2.2
+        with:
+          ref: ${{ inputs.tag || github.ref }}
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5.6.0
+        with:
+          python-version: "3.12"
+
+      - name: Install build dependencies
+        working-directory: face-detection-webapp/backend
+        run: python -m pip install --upgrade pip && python -m pip install -r requirements-build.txt
+
+      - name: Install face-recognition without dlib dependency
+        working-directory: face-detection-webapp/backend
+        run: python -m pip install --no-deps face-recognition==1.3.0
+
+      - name: Build executable
+        working-directory: face-detection-webapp/backend
+        run: python -m PyInstaller --clean --noconfirm build-executable.spec
+
+      - name: Rename executable (Unix)
+        if: runner.os != 'Windows'
+        working-directory: face-detection-webapp/backend
+        shell: bash
+        run: mv "dist/FaceGallery" "dist/${{ matrix.asset }}"
+
+      - name: Rename executable (Windows)
+        if: runner.os == 'Windows'
+        working-directory: face-detection-webapp/backend
+        shell: pwsh
+        run: Move-Item "dist/FaceGallery.exe" "dist/${{ matrix.asset }}"
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4.6.2
+        with:
+          name: ${{ matrix.asset }}
+          path: face-detection-webapp/backend/dist/${{ matrix.asset }}
+          if-no-files-found: error
+
+  release:
+    name: Publish GitHub Release
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4.3.0
+        with:
+          path: release-assets
+          merge-multiple: true
+
+      - name: Create or update release
+        uses: softprops/action-gh-release@v2.3.2
+        with:
+          tag_name: ${{ inputs.tag || github.ref_name }}
+          files: release-assets/*
+          generate_release_notes: true
