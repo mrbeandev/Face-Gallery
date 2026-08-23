@@ -27,6 +27,7 @@ from database import SessionLocal, Job, Image as DBImage, UniqueFace, FaceMatch,
 
 TOLERANCE = 0.5
 FACE_CROP_PADDING = 0.45   # 45% padding around the detected face bounding box
+DETECTION_MAX_LONG_EDGE = 1600
 
 
 class FaceProcessor:
@@ -103,6 +104,32 @@ class FaceProcessor:
         db.commit()
         self._emit({"type": "notification", "level": msg_type, "message": message})
 
+    @staticmethod
+    def _detect_and_encode(image):
+        """Detect and encode on a bounded-size copy; boxes are returned in source coordinates."""
+        height, width = image.shape[:2]
+        scale = min(1.0, DETECTION_MAX_LONG_EDGE / max(height, width))
+        if scale < 1.0:
+            detection_image = cv2.resize(
+                image, (max(1, round(width * scale)), max(1, round(height * scale))),
+                interpolation=cv2.INTER_AREA,
+            )
+        else:
+            detection_image = image
+
+        detection_locations = face_recognition.face_locations(
+            detection_image, number_of_times_to_upsample=0
+        )
+        encodings = face_recognition.face_encodings(detection_image, detection_locations)
+        if scale < 1.0:
+            locations = [
+                tuple(round(coordinate / scale) for coordinate in location)
+                for location in detection_locations
+            ]
+        else:
+            locations = detection_locations
+        return locations, encodings
+
     # ------------------------------------------------------------------ #
     # Main pipeline                                                        #
     # ------------------------------------------------------------------ #
@@ -130,8 +157,10 @@ class FaceProcessor:
             self._emit({"type": "progress", "step": 1, "processed": 0, "total": total, "current_file": ""})
 
             # ---- Step 1: find unique faces --------------------------------
-            known_encodings = []
-            known_face_ids = []
+            existing_faces = db.query(UniqueFace).filter(UniqueFace.job_id == self.job_id).all()
+            known_encodings = [pickle.loads(face.encoding) for face in existing_faces]
+            known_face_ids = [face.id for face in existing_faces]
+            image_detection_cache: dict[str, tuple[list[tuple[int, int, int, int]], list]] = {}
 
             for idx, img_rec in enumerate(images_records):
                 if self.stop_event.is_set():
@@ -151,7 +180,8 @@ class FaceProcessor:
                 path = img_rec.stored_path
                 try:
                     image = face_recognition.load_image_file(path)
-                    face_locations = face_recognition.face_locations(image, number_of_times_to_upsample=0)
+                    face_locations, current_encodings = self._detect_and_encode(image)
+                    image_detection_cache[img_rec.id] = (face_locations, current_encodings)
                 except Exception as e:
                     self._add_notification(db, "error", f"Could not process {img_rec.filename}: {e}")
                     img_rec.status = "skipped"
@@ -168,8 +198,7 @@ class FaceProcessor:
                     img_rec.status = "processed"
                     db.commit()
 
-                    for face_location in face_locations:
-                        encoding = face_recognition.face_encodings(image, [face_location])[0]
+                    for face_location, encoding in zip(face_locations, current_encodings):
 
                         if known_encodings:
                             matches = face_recognition.compare_faces(known_encodings, encoding, tolerance=TOLERANCE)
@@ -256,9 +285,12 @@ class FaceProcessor:
                 })
 
                 try:
-                    image = face_recognition.load_image_file(img_rec.stored_path)
-                    face_locs = face_recognition.face_locations(image, number_of_times_to_upsample=0)
-                    current_encodings = face_recognition.face_encodings(image, face_locs)
+                    cached = image_detection_cache.get(img_rec.id)
+                    if cached:
+                        face_locs, current_encodings = cached
+                    else:
+                        image = face_recognition.load_image_file(img_rec.stored_path)
+                        face_locs, current_encodings = self._detect_and_encode(image)
                 except Exception:
                     job.step2_processed = idx + 1
                     db.commit()
@@ -266,15 +298,25 @@ class FaceProcessor:
 
                 # uf_id -> [top, right, bottom, left] of the matching face in this image
                 matched_faces: dict[str, list[int]] = {}
+                all_uf_ids = [uf_id for uf_id, _ in uf_encodings]
+                all_uf_encodings = [uf_enc for _, uf_enc in uf_encodings]
                 for enc_idx, enc in enumerate(current_encodings):
                     loc = face_locs[enc_idx]  # (top, right, bottom, left)
-                    for uf_id, uf_enc in uf_encodings:
-                        if uf_id in matched_faces:
-                            continue
-                        if True in face_recognition.compare_faces([uf_enc], enc, tolerance=TOLERANCE):
-                            matched_faces[uf_id] = list(loc)
+                    if not all_uf_encodings:
+                        continue
+                    distances = face_recognition.face_distance(all_uf_encodings, enc)
+                    closest_idx = int(distances.argmin())
+                    if distances[closest_idx] <= TOLERANCE:
+                        closest_id = all_uf_ids[closest_idx]
+                        if closest_id not in matched_faces:
+                            matched_faces[closest_id] = list(loc)
 
                 for uf_id, box in matched_faces.items():
+                    existing_match = db.query(FaceMatch).filter_by(
+                        image_id=img_rec.id, unique_face_id=uf_id
+                    ).first()
+                    if existing_match:
+                        continue
                     folder_name, folder_path = uf_folders[uf_id]
                     dest = os.path.join(folder_path, img_rec.filename)
                     shutil.copy2(img_rec.stored_path, dest)
