@@ -112,7 +112,7 @@ source venv/bin/activate        # macOS / Linux
 pip install -r requirements.txt
 
 # Start the API server
-uvicorn main:app --reload --host 0.0.0.0 --port 8000
+uvicorn main:app --port 8000
 ```
 
 The API is now running at `http://localhost:8000`.
@@ -135,6 +135,32 @@ The app is now running at `http://localhost:5173`.
 Open `http://localhost:5173` in your browser. On first launch you'll be prompted to enter the backend URL (defaults to `http://localhost:8000`). Click **Test & Connect** to verify.
 
 > The Vite dev server proxies `/api`, `/ws`, `/thumb`, and `/static` requests to the backend automatically.
+
+---
+
+## Running your own backend
+
+The frontend is hosted at [face-gallery.mrbean.dev](https://face-gallery.mrbean.dev), but the backend runs on your own machine. Photos are uploaded to and processed by that local backend, so they never leave your machine.
+
+The fastest way to get started is to download the prebuilt executable for your platform from the [GitHub Releases page](https://github.com/mrbeandev/Face-Gallery/releases), run it, and let it open the hosted browser already connected to the backend. The available assets are:
+
+- `FaceGallery-linux-x86_64`
+- `FaceGallery-macos-arm64`
+- `FaceGallery-windows-x86_64.exe`
+
+These binaries are unsigned. On macOS, if you see “cannot be opened because the developer cannot be verified”, right-click the app and choose **Open**, or run `xattr -d com.apple.quarantine ./FaceGallery-macos-arm64`. On Windows, if SmartScreen shows “Windows protected your PC”, choose **More info**, then **Run anyway**. On Linux, run `chmod +x ./FaceGallery-linux-x86_64` before launching it.
+
+Intel Macs are not covered by a prebuilt binary; build from source instead.
+
+If you prefer to run it manually, follow the backend steps in [Quick Start](#quick-start): clone the repository, create the virtual environment, install the backend requirements, and start Uvicorn. Then enter `http://localhost:8000` in the **Connect to Backend** dialog. Use `localhost`, not `127.0.0.1`: Firefox exempts `localhost` by name from mixed-content blocking, but not the raw IP address.
+
+You can also provide the backend URL in the hosted link:
+
+`https://face-gallery.mrbean.dev/?backend=http://localhost:8000`
+
+If you serve the frontend from an origin other than the hosted site, set `FACE_GALLERY_ALLOWED_ORIGINS` to a comma-separated list of allowed frontend origins. Set `FACE_GALLERY_DATA_DIR` to choose where the backend stores uploads, results, thumbnails, and the SQLite database.
+
+Safari blocks all mixed content, including requests to `localhost`, so the hosted frontend cannot reach a local backend in Safari. Use Chrome, Edge, or Firefox 84+.
 
 ---
 
@@ -271,7 +297,8 @@ Settings are configurable at runtime through the UI. No `.env` file required.
 | Face Crop Padding | Upload page > Processing Settings | 45% | Extra space around detected faces when cropping |
 | Match Tolerance | Upload page > Processing Settings | 0.50 | Face matching strictness (lower = stricter) |
 | Visual Effects | Sidebar > Effects | All on | Toggle animations, glow, shadows, hover, minimap |
-| CORS origins | `backend/main.py` | `localhost:5173` | Add origins for production |
+| `FACE_GALLERY_ALLOWED_ORIGINS` | Environment variable | Hosted site, localhost dev/preview origins | Comma-separated frontend origins allowed by the backend |
+| `FACE_GALLERY_DATA_DIR` | Environment variable | Current directory, or the platform data directory for the executable | Directory containing uploads, results, thumbnails, and the SQLite database |
 
 ---
 
@@ -285,7 +312,7 @@ npm run build
 # Serve with a production ASGI server
 cd ../backend
 pip install gunicorn
-gunicorn main:app -w 4 -k uvicorn.workers.UvicornWorker --bind 0.0.0.0:8000
+gunicorn main:app -w 4 -k uvicorn.workers.UvicornWorker --bind 127.0.0.1:8000
 ```
 
 Point your reverse proxy (nginx, Caddy, etc.) at port 8000 and serve `frontend/dist/` as static files. Remember to update CORS origins in `main.py` for your domain.
