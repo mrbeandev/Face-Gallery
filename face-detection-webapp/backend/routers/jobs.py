@@ -15,6 +15,7 @@ from database import SessionLocal, Job, Image as DBImage, UniqueFace, FaceMatch,
 import json
 from schemas import JobOut, JobSummary, UploadResponse, ResultsOut, UniqueFaceOut, FaceMatchOut, ImageOut, ImageFaceMatchOut, GroupMemberOut
 from processing import FaceProcessor
+from paths import RESULTS_DIR, UPLOADS_DIR
 
 router = APIRouter()
 
@@ -22,8 +23,15 @@ router = APIRouter()
 active_processors: dict[str, FaceProcessor] = {}
 
 ALLOWED_EXTENSIONS = {".jpg", ".jpeg", ".png", ".gif", ".bmp", ".webp", ".tiff", ".tif"}
-BASE_UPLOAD_DIR = "uploads"
-BASE_RESULTS_DIR = "results"
+BASE_UPLOAD_DIR = str(UPLOADS_DIR)
+BASE_RESULTS_DIR = str(RESULTS_DIR)
+
+# Defaults suit a self-hosted installation while bounding memory and archive expansion.
+MAX_FILE_BYTES = int(os.getenv("FACE_GALLERY_MAX_FILE_BYTES", str(50 * 1024 * 1024)))
+MAX_REQUEST_BYTES = int(os.getenv("FACE_GALLERY_MAX_REQUEST_BYTES", str(500 * 1024 * 1024)))
+MAX_IMAGES_PER_JOB = int(os.getenv("FACE_GALLERY_MAX_IMAGES_PER_JOB", "10000"))
+MAX_ZIP_DECOMPRESSED_BYTES = int(os.getenv("FACE_GALLERY_MAX_ZIP_DECOMPRESSED_BYTES", str(1 * 1024 * 1024 * 1024)))
+UPLOAD_READ_CHUNK = 1024 * 1024
 
 
 def _is_valid_image(data: bytes) -> bool:
@@ -39,6 +47,37 @@ def _is_valid_image(data: bytes) -> bool:
 
 def _ext_ok(filename: str) -> bool:
     return os.path.splitext(filename.lower())[1] in ALLOWED_EXTENSIONS
+
+
+async def _read_upload(upload: UploadFile, total_bytes: int) -> tuple[bytes, int]:
+    data = bytearray()
+    while True:
+        chunk = await upload.read(UPLOAD_READ_CHUNK)
+        if not chunk:
+            break
+        if len(data) + len(chunk) > MAX_FILE_BYTES:
+            raise HTTPException(status_code=413, detail=f"File exceeds the {MAX_FILE_BYTES} byte limit")
+        if total_bytes + len(data) + len(chunk) > MAX_REQUEST_BYTES:
+            raise HTTPException(status_code=413, detail=f"Request exceeds the {MAX_REQUEST_BYTES} byte limit")
+        data.extend(chunk)
+    return bytes(data), total_bytes + len(data)
+
+
+def _zip_member_data(zf: zipfile.ZipFile, info: zipfile.ZipInfo, decompressed: int) -> tuple[bytes, int]:
+    if info.file_size > MAX_FILE_BYTES:
+        raise HTTPException(status_code=413, detail=f"Zip member exceeds the {MAX_FILE_BYTES} byte limit")
+    if decompressed + info.file_size > MAX_ZIP_DECOMPRESSED_BYTES:
+        raise HTTPException(status_code=413, detail=f"Zip archive exceeds the {MAX_ZIP_DECOMPRESSED_BYTES} byte decompressed limit")
+    with zf.open(info) as member:
+        data = member.read(MAX_FILE_BYTES + 1)
+    if len(data) > MAX_FILE_BYTES:
+        raise HTTPException(status_code=413, detail=f"Zip member exceeds the {MAX_FILE_BYTES} byte limit")
+    return data, decompressed + len(data)
+
+
+def _ensure_image_limit(count: int):
+    if count >= MAX_IMAGES_PER_JOB:
+        raise HTTPException(status_code=413, detail=f"Job exceeds the {MAX_IMAGES_PER_JOB} image limit")
 
 
 # ------------------------------------------------------------------ #
@@ -58,52 +97,70 @@ async def upload_images(
 
     accepted: list[str] = []
     rejected: list[str] = []
+    written_paths: list[str] = []
+    total_bytes = 0
     notifications: list[dict] = []
 
-    for upload in files:
-        raw = await upload.read()
-        fname = upload.filename or "unknown"
-        ext = os.path.splitext(fname.lower())[1]
+    try:
+        for upload in files:
+            raw, total_bytes = await _read_upload(upload, total_bytes)
+            fname = upload.filename or "unknown"
+            ext = os.path.splitext(fname.lower())[1]
 
-        # ---- ZIP handling ----
-        if ext == ".zip":
-            try:
-                with zipfile.ZipFile(io.BytesIO(raw)) as zf:
-                    for member in zf.namelist():
+            # ---- ZIP handling ----
+            if ext == ".zip":
+                try:
+                    decompressed = 0
+                    with zipfile.ZipFile(io.BytesIO(raw)) as zf:
+                        for info in zf.infolist():
+                            member = info.filename
                         # Skip directories and hidden files
-                        if member.endswith("/") or os.path.basename(member).startswith("."):
-                            continue
-                        member_ext = os.path.splitext(member.lower())[1]
-                        member_data = zf.read(member)
-                        base = os.path.basename(member)
+                            if member.endswith("/") or os.path.basename(member).startswith("."):
+                                continue
+                            member_ext = os.path.splitext(member.lower())[1]
+                            member_data, decompressed = _zip_member_data(zf, info, decompressed)
+                            base = os.path.basename(member)
 
-                        if member_ext not in ALLOWED_EXTENSIONS or not _is_valid_image(member_data):
-                            rejected.append(base)
-                            notifications.append({
-                                "type": "warning",
-                                "message": f"Skipped (not a valid image): {base}",
-                            })
-                            continue
+                            if member_ext not in ALLOWED_EXTENSIONS or not _is_valid_image(member_data):
+                                rejected.append(base)
+                                notifications.append({
+                                    "type": "warning",
+                                    "message": f"Skipped (not a valid image): {base}",
+                                })
+                                continue
 
-                        dest = os.path.join(upload_dir, base)
-                        with open(dest, "wb") as f:
-                            f.write(member_data)
-                        accepted.append(base)
-            except zipfile.BadZipFile:
+                            _ensure_image_limit(len(accepted))
+                            dest = os.path.join(upload_dir, base)
+                            with open(dest, "wb") as f:
+                                f.write(member_data)
+                            written_paths.append(dest)
+                            accepted.append(base)
+                except zipfile.BadZipFile:
+                    rejected.append(fname)
+                    notifications.append({"type": "error", "message": f"Bad zip file: {fname}"})
+                continue
+
+            # ---- Single image handling ----
+            if not _ext_ok(fname) or not _is_valid_image(raw):
                 rejected.append(fname)
-                notifications.append({"type": "error", "message": f"Bad zip file: {fname}"})
-            continue
+                notifications.append({"type": "warning", "message": f"Skipped (not a valid image): {fname}"})
+                continue
 
-        # ---- Single image handling ----
-        if not _ext_ok(fname) or not _is_valid_image(raw):
-            rejected.append(fname)
-            notifications.append({"type": "warning", "message": f"Skipped (not a valid image): {fname}"})
-            continue
-
-        dest = os.path.join(upload_dir, fname)
-        with open(dest, "wb") as f:
-            f.write(raw)
-        accepted.append(fname)
+            _ensure_image_limit(len(accepted))
+            dest = os.path.join(upload_dir, fname)
+            with open(dest, "wb") as f:
+                f.write(raw)
+            written_paths.append(dest)
+            accepted.append(fname)
+    except HTTPException:
+        for written_path in written_paths:
+            try:
+                os.remove(written_path)
+            except FileNotFoundError:
+                pass
+        shutil.rmtree(upload_dir, ignore_errors=True)
+        shutil.rmtree(results_dir, ignore_errors=True)
+        raise
 
     if not accepted:
         shutil.rmtree(upload_dir, ignore_errors=True)
@@ -426,6 +483,17 @@ def delete_face(
     face = db.get(UniqueFace, unique_face_id)
     if not face or face.job_id != job_id:
         raise HTTPException(status_code=404, detail="Face not found")
+    if face.group_id == face.id:
+        remaining = db.query(UniqueFace).filter(
+            UniqueFace.group_id == face.id, UniqueFace.id != face.id
+        ).all()
+        if len(remaining) == 1:
+            remaining[0].group_id = None
+        elif len(remaining) > 1:
+            new_primary = remaining[0]
+            new_primary.group_id = new_primary.id
+            for member in remaining[1:]:
+                member.group_id = new_primary.id
     # Delete all matches first, then the face
     db.query(FaceMatch).filter_by(unique_face_id=unique_face_id).delete()
     db.delete(face)
@@ -453,6 +521,8 @@ async def add_images_to_job(
 
     accepted: list[str] = []
     rejected: list[str] = []
+    written_paths: list[str] = []
+    total_bytes = 0
 
     # Existing filenames to avoid duplicates
     existing_names = {
@@ -460,43 +530,57 @@ async def add_images_to_job(
         for img in db.query(DBImage).filter(DBImage.job_id == job_id).all()
     }
 
-    for upload in files:
-        raw = await upload.read()
-        fname = upload.filename or "unknown"
-        ext = os.path.splitext(fname.lower())[1]
+    try:
+        for upload in files:
+            raw, total_bytes = await _read_upload(upload, total_bytes)
+            fname = upload.filename or "unknown"
+            ext = os.path.splitext(fname.lower())[1]
 
-        if ext == ".zip":
-            try:
-                with zipfile.ZipFile(io.BytesIO(raw)) as zf:
-                    for member in zf.namelist():
-                        if member.endswith("/") or os.path.basename(member).startswith("."):
-                            continue
-                        member_ext = os.path.splitext(member.lower())[1]
-                        member_data = zf.read(member)
-                        base = os.path.basename(member)
-                        if base in existing_names:
-                            continue
-                        if member_ext not in ALLOWED_EXTENSIONS or not _is_valid_image(member_data):
-                            rejected.append(base)
-                            continue
-                        dest = os.path.join(upload_dir, base)
-                        with open(dest, "wb") as f:
-                            f.write(member_data)
-                        accepted.append(base)
-                        existing_names.add(base)
-            except zipfile.BadZipFile:
+            if ext == ".zip":
+                try:
+                    decompressed = 0
+                    with zipfile.ZipFile(io.BytesIO(raw)) as zf:
+                        for info in zf.infolist():
+                            member = info.filename
+                            if member.endswith("/") or os.path.basename(member).startswith("."):
+                                continue
+                            member_ext = os.path.splitext(member.lower())[1]
+                            member_data, decompressed = _zip_member_data(zf, info, decompressed)
+                            base = os.path.basename(member)
+                            if base in existing_names:
+                                continue
+                            if member_ext not in ALLOWED_EXTENSIONS or not _is_valid_image(member_data):
+                                rejected.append(base)
+                                continue
+                            _ensure_image_limit(len(existing_names))
+                            dest = os.path.join(upload_dir, base)
+                            with open(dest, "wb") as f:
+                                f.write(member_data)
+                            written_paths.append(dest)
+                            accepted.append(base)
+                            existing_names.add(base)
+                except zipfile.BadZipFile:
+                    rejected.append(fname)
+                continue
+
+            if fname in existing_names or not _ext_ok(fname) or not _is_valid_image(raw):
                 rejected.append(fname)
-            continue
+                continue
 
-        if fname in existing_names or not _ext_ok(fname) or not _is_valid_image(raw):
-            rejected.append(fname)
-            continue
-
-        dest = os.path.join(upload_dir, fname)
-        with open(dest, "wb") as f:
-            f.write(raw)
-        accepted.append(fname)
-        existing_names.add(fname)
+            _ensure_image_limit(len(existing_names))
+            dest = os.path.join(upload_dir, fname)
+            with open(dest, "wb") as f:
+                f.write(raw)
+            written_paths.append(dest)
+            accepted.append(fname)
+            existing_names.add(fname)
+    except HTTPException:
+        for written_path in written_paths:
+            try:
+                os.remove(written_path)
+            except FileNotFoundError:
+                pass
+        raise
 
     if not accepted:
         raise HTTPException(status_code=400, detail="No new valid images in upload.")

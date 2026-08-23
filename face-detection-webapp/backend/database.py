@@ -5,8 +5,9 @@ from sqlalchemy import (
     create_engine, Column, String, Integer, DateTime, Text, LargeBinary, ForeignKey, text
 )
 from sqlalchemy.orm import declarative_base, sessionmaker, relationship
+from paths import DATABASE_PATH
 
-DATABASE_URL = "sqlite:///./face_detection.db"
+DATABASE_URL = f"sqlite:///{DATABASE_PATH}"
 
 engine = create_engine(
     DATABASE_URL,

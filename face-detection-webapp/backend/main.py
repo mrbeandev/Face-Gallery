@@ -7,6 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response
 from fastapi.staticfiles import StaticFiles
 from PIL import Image
+from paths import RESULTS_DIR, THUMBS_DIR, UPLOADS_DIR, DATA_DIR
 
 from database import Base, engine
 from routers import jobs, ws
@@ -15,26 +16,29 @@ Base.metadata.create_all(bind=engine)
 
 app = FastAPI(title="Face Detection Web App")
 
+# The hosted frontend is a different origin from the user's local backend, so this must be configurable.
+allowed_origins = os.getenv(
+    "FACE_GALLERY_ALLOWED_ORIGINS",
+    "https://face-gallery.mrbean.dev,http://localhost:5173,http://127.0.0.1:5173,http://localhost:4173,http://127.0.0.1:4173",
+)
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],
+    allow_origins=[origin.strip() for origin in allowed_origins.split(",") if origin.strip()],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
 # Serve uploaded and result images
-os.makedirs("uploads", exist_ok=True)
-os.makedirs("results", exist_ok=True)
-app.mount("/static/uploads", StaticFiles(directory="uploads"), name="uploads")
-app.mount("/static/results", StaticFiles(directory="results"), name="results")
+app.mount("/static/uploads", StaticFiles(directory=str(UPLOADS_DIR)), name="uploads")
+app.mount("/static/results", StaticFiles(directory=str(RESULTS_DIR)), name="results")
 
 app.include_router(jobs.router, prefix="/api")
 app.include_router(ws.router)
 
 
-THUMB_CACHE_DIR = "thumbs"
-os.makedirs(THUMB_CACHE_DIR, exist_ok=True)
+THUMB_CACHE_DIR = str(THUMBS_DIR)
 
 
 @app.get("/thumb/{path:path}")
@@ -42,10 +46,14 @@ def get_thumbnail(path: str, size: int = 200):
     """Serve a resized thumbnail with disk caching."""
     size = min(max(size, 50), 400)
 
-    # Path already includes uploads/ or results/ prefix
-    if not os.path.isfile(path):
+    # Only paths below the two image trees may be read by this endpoint.
+    requested = os.path.realpath(os.path.join(str(DATA_DIR), path))
+    allowed_roots = (str(UPLOADS_DIR), str(RESULTS_DIR))
+    if not any(os.path.commonpath((requested, root)) == root for root in allowed_roots):
         return Response(status_code=404)
-    full = path
+    full = requested
+    if not os.path.isfile(full):
+        return Response(status_code=404)
 
     # Cache path
     cache_key = f"{path}_{size}"
