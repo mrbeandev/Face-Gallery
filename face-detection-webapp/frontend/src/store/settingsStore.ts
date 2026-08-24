@@ -3,6 +3,30 @@ import { create } from "zustand";
 const URL_KEY = "facegallery_backend_url";
 const FX_KEY = "facegallery_effects";
 
+// The hosted demo backend. Change this in one place if the host moves.
+export const DEMO_BACKEND_URL = "https://api.face-gallery.mrbean.dev";
+
+export function isDemoBackend(url: string | null): boolean {
+  if (!url) return false;
+
+  try {
+    const candidate = new URL(url.trim());
+    const demo = new URL(DEMO_BACKEND_URL);
+    const normalise = (value: URL) => [
+      value.protocol,
+      value.hostname.toLowerCase(),
+      value.port,
+      value.pathname.replace(/\/+$/, ""),
+      value.search,
+      value.hash,
+    ].join("|");
+
+    return normalise(candidate) === normalise(demo);
+  } catch {
+    return false;
+  }
+}
+
 function loadUrl(): string | null {
   try { return localStorage.getItem(URL_KEY); } catch { return null; }
 }

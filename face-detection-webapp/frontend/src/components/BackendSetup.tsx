@@ -2,11 +2,12 @@ import { useState } from "react";
 import { createPortal } from "react-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import { Server, Loader2, CheckCircle2, XCircle } from "lucide-react";
-import { useSettingsStore } from "../store/settingsStore";
+import { Link } from "react-router-dom";
+import { DEMO_BACKEND_URL, isDemoBackend, useSettingsStore } from "../store/settingsStore";
 
 export default function BackendSetup({ onDone }: { onDone: () => void }) {
   const setBackendUrl = useSettingsStore((s) => s.setBackendUrl);
-  const [url, setUrl] = useState("http://localhost:8000");
+  const [url, setUrl] = useState(DEMO_BACKEND_URL);
   const [testing, setTesting] = useState(false);
   const [result, setResult] = useState<"ok" | "fail" | null>(null);
   const [showHelp, setShowHelp] = useState(false);
@@ -62,7 +63,7 @@ export default function BackendSetup({ onDone }: { onDone: () => void }) {
 
         <div className="space-y-4">
           <p className="text-sm text-slate-400">
-            Face Gallery needs a backend running on your own machine. Your photos stay there.
+            Face Gallery needs a backend. You can use the hosted demo below, or run one on your own machine so your photos stay there.
           </p>
 
           <div className="rounded-xl bg-dark-700 border border-white/10">
@@ -125,6 +126,15 @@ export default function BackendSetup({ onDone }: { onDone: () => void }) {
               placeholder="http://localhost:8000"
               className="w-full px-4 py-3 rounded-xl bg-dark-700 border border-white/10 text-white placeholder-slate-500 focus:outline-none focus:border-brand-500/50 focus:ring-1 focus:ring-brand-500/30 font-mono text-sm transition-all"
             />
+            {isDemoBackend(url) && (
+              <p className="mt-2 text-xs text-slate-500">
+                By using this backend you accept our{" "}
+                <Link to="/terms" className="text-slate-400 underline hover:text-slate-300">
+                  Terms and Conditions
+                </Link>
+                .
+              </p>
+            )}
           </div>
 
           <AnimatePresence mode="wait">
