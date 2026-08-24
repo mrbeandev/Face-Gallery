@@ -2,9 +2,9 @@ import io
 import os
 from pathlib import Path
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import Response
+from fastapi.responses import HTMLResponse, Response
 from fastapi.staticfiles import StaticFiles
 from PIL import Image
 from paths import RESULTS_DIR, THUMBS_DIR, UPLOADS_DIR, DATA_DIR
@@ -39,6 +39,76 @@ app.include_router(ws.router)
 
 
 THUMB_CACHE_DIR = str(THUMBS_DIR)
+
+
+@app.get("/", response_class=HTMLResponse)
+def landing_page(request: Request):
+    """Explain what this backend is and link to the hosted frontend."""
+    forwarded_proto = request.headers.get("x-forwarded-proto")
+    forwarded_host = request.headers.get("x-forwarded-host")
+    scheme = (forwarded_proto or request.url.scheme).split(",", 1)[0].strip()
+    host = (forwarded_host or request.url.netloc).split(",", 1)[0].strip()
+    backend_url = f"{scheme}://{host}"
+    frontend_url = f"https://face-gallery.mrbean.dev/?backend={backend_url}"
+
+    html = f"""<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Face Gallery backend</title>
+    <style>
+      :root {{ color-scheme: dark; }}
+      * {{ box-sizing: border-box; }}
+      body {{
+        margin: 0;
+        min-height: 100vh;
+        display: grid;
+        place-items: center;
+        padding: 2rem 1.25rem;
+        background: #11100f;
+        color: #e7e2da;
+        font: 1rem/1.75 system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      }}
+      main {{ width: min(100%, 40rem); }}
+      .eyebrow {{
+        margin: 0 0 .75rem;
+        color: #d49a46;
+        font-size: .78rem;
+        font-weight: 700;
+        letter-spacing: .14em;
+        text-transform: uppercase;
+      }}
+      h1 {{ margin: 0 0 1rem; color: #fffaf2; font-size: clamp(2rem, 8vw, 3.2rem); line-height: 1.1; }}
+      p {{ margin: 0 0 1.25rem; }}
+      a {{ color: #e5ad5c; }}
+      a:hover {{ color: #ffd18a; }}
+      .action {{
+        display: inline-block;
+        margin: .5rem 0 1.5rem;
+        padding: .75rem 1rem;
+        border: 1px solid #a66f2d;
+        border-radius: .45rem;
+        background: #2a2116;
+        font-weight: 650;
+        text-decoration: none;
+      }}
+      .quiet {{ color: #aaa39a; font-size: .92rem; }}
+      code {{ color: #ded0bd; }}
+    </style>
+  </head>
+  <body>
+    <main>
+      <p class="eyebrow">Face Gallery backend API</p>
+      <h1>This is the backend, not the app.</h1>
+      <p>There is no user interface here. Open the Face Gallery frontend to browse and organise your photos.</p>
+      <a class="action" href="{frontend_url}">Open Face Gallery and connect automatically</a>
+      <p class="quiet">This is a shared demo server. For photos that should stay private, <a href="https://github.com/mrbeandev/Face-Gallery/wiki/Running-Your-Own-Backend">run your own backend</a>.</p>
+      <p class="quiet"><a href="https://github.com/mrbeandev/Face-Gallery">Face Gallery repository</a> · API checks: <a href="/health"><code>/health</code></a> and <a href="/api/jobs"><code>/api/jobs</code></a> · <a href="https://github.com/mrbeandev/Face-Gallery/wiki/API-Reference">API reference</a></p>
+    </main>
+  </body>
+</html>"""
+    return HTMLResponse(content=html, headers={"Cache-Control": "no-cache, max-age=0"})
 
 
 @app.get("/thumb/{path:path}")
