@@ -3,9 +3,22 @@
 Detect the faces in a pile of photos, work out which photos each person appears
 in, and browse the result as face cards or an interactive graph.
 
-The frontend is hosted at
-[face-gallery.mrbean.dev](https://face-gallery.mrbean.dev). The backend runs on
-your own machine, so your photos are never uploaded anywhere.
+## → [face-gallery.mrbean.dev](https://face-gallery.mrbean.dev) is free and open to everyone
+
+No sign-up, no account, nothing to install to try it. Open it and connect your
+own backend — a backend running on your own laptop works fine, and is the
+normal way to use it.
+
+**Your photos never leave your machine.** The hosted site is only the interface:
+static HTML, CSS, and JavaScript. It has no server behind it and no storage.
+Every photo you add is uploaded to, processed by, and stored on the backend
+*you* point it at. When that backend is `http://localhost:8000`, your photos
+never travel further than your own computer, and nobody — including whoever
+runs the hosted site — can reach them.
+
+The quickest way to get a backend running is to
+[download the executable](https://github.com/mrbeandev/Face-Gallery/releases)
+and open it. It starts the backend and opens the site already connected.
 
 ![Face Gallery Demo](face-detection-webapp/frontend/public/demo-thumbnail.jpg)
 
@@ -44,6 +57,10 @@ your own machine, so your photos are never uploaded anywhere.
 ---
 
 ## Running your own backend
+
+[face-gallery.mrbean.dev](https://face-gallery.mrbean.dev) is public and free to
+use, but it deliberately has no server of its own. You supply the backend, and
+it holds all your data.
 
 Download the executable for your platform from the
 [Releases page](https://github.com/mrbeandev/Face-Gallery/releases), run it,
