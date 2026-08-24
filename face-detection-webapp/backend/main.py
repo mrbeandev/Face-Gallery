@@ -44,10 +44,20 @@ THUMB_CACHE_DIR = str(THUMBS_DIR)
 @app.get("/", response_class=HTMLResponse)
 def landing_page(request: Request):
     """Explain what this backend is and link to the hosted frontend."""
-    forwarded_proto = request.headers.get("x-forwarded-proto")
-    forwarded_host = request.headers.get("x-forwarded-host")
-    scheme = (forwarded_proto or request.url.scheme).split(",", 1)[0].strip()
-    host = (forwarded_host or request.url.netloc).split(",", 1)[0].strip()
+    def first_header_value(*names: str) -> str | None:
+        for name in names:
+            value = request.headers.get(name)
+            if value is not None:
+                value = value.split(",", 1)[0].strip()
+                if value:
+                    return value
+        return None
+
+    scheme = first_header_value("x-forwarded-proto", "x-scheme") or request.url.scheme
+    host = first_header_value("x-forwarded-host", "x-host") or request.url.netloc
+    default_port = ":443" if scheme == "https" else ":80" if scheme == "http" else None
+    if default_port and host.endswith(default_port):
+        host = host[: -len(default_port)]
     backend_url = f"{scheme}://{host}"
     frontend_url = f"https://face-gallery.mrbean.dev/?backend={backend_url}"
 
