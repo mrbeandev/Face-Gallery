@@ -1,5 +1,6 @@
 import { ArrowLeft } from "lucide-react";
 import { Link } from "react-router-dom";
+import { DEMO_BACKEND_URL } from "../store/settingsStore";
 
 export default function TermsPage() {
   return (
@@ -27,7 +28,7 @@ export default function TermsPage() {
           <section>
             <h2 className="mb-2 text-base font-semibold text-white">Demo use only</h2>
             <p>
-              The hosted backend at <span className="font-mono text-slate-200">https://api.face-gallery.mrbean.dev</span> exists for demonstration only. It is provided as-is, with no warranty or guarantee that it will be available. It may be reset or taken down at any time without notice.
+              The hosted backend at <span className="font-mono text-slate-200">{DEMO_BACKEND_URL}</span> exists for demonstration only. It is provided as-is, with no warranty or guarantee that it will be available. It may be reset or taken down at any time without notice.
             </p>
           </section>
 
