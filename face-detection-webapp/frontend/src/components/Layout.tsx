@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { AnimatePresence, motion } from "framer-motion";
@@ -272,9 +272,17 @@ export { ResizeHandle, SIDEBAR_MIN, SIDEBAR_MAX, SIDEBAR_DEFAULT };
 
 export default function Layout({ children }: { children: React.ReactNode }) {
   const backendUrl = useSettingsStore((s) => s.backendUrl);
+  const location = useLocation();
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [showSetup, setShowSetup] = useState(!backendUrl);
+  const [showSetup, setShowSetup] = useState(!backendUrl && location.pathname !== "/terms");
   const [sidebarWidth, setSidebarWidth] = useState(SIDEBAR_DEFAULT);
+
+  useEffect(() => {
+    if (!backendUrl && location.pathname !== "/terms") {
+      const timeout = window.setTimeout(() => setShowSetup(true), 0);
+      return () => window.clearTimeout(timeout);
+    }
+  }, [backendUrl, location.pathname]);
 
   const handleSidebarResize = useCallback((delta: number) => {
     setSidebarWidth((w) => Math.min(SIDEBAR_MAX, Math.max(SIDEBAR_MIN, w + delta)));

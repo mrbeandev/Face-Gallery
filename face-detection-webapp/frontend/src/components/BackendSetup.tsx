@@ -129,7 +129,7 @@ export default function BackendSetup({ onDone }: { onDone: () => void }) {
             {isDemoBackend(url) && (
               <p className="mt-2 text-xs text-slate-500">
                 By using this backend you accept our{" "}
-                <Link to="/terms" className="text-slate-400 underline hover:text-slate-300">
+                <Link to="/terms" onClick={onDone} className="text-slate-400 underline hover:text-slate-300">
                   Terms and Conditions
                 </Link>
                 .
